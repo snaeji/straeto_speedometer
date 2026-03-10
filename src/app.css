@@ -1,0 +1,138 @@
+@import 'tailwindcss';
+@import 'maplibre-gl/dist/maplibre-gl.css';
+
+@theme {
+	--color-bg-primary: #030712;
+	--color-bg-secondary: #0f172a;
+	--color-bg-elevated: #1e293b;
+	--color-glass: rgba(255, 255, 255, 0.03);
+	--color-glass-border: rgba(255, 255, 255, 0.08);
+	--color-glass-hover: rgba(255, 255, 255, 0.06);
+	--color-accent: #06b6d4;
+	--color-accent-dim: rgba(6, 182, 212, 0.15);
+	--color-success: #10b981;
+	--color-warning: #f59e0b;
+	--color-danger: #ef4444;
+	--color-text-primary: #f1f5f9;
+	--color-text-secondary: #94a3b8;
+	--color-text-muted: #475569;
+	--font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+	--font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+}
+
+@utility glass {
+	background: var(--color-glass);
+	backdrop-filter: blur(20px);
+	-webkit-backdrop-filter: blur(20px);
+	border: 1px solid var(--color-glass-border);
+}
+
+@utility glass-strong {
+	background: rgba(15, 23, 42, 0.85);
+	backdrop-filter: blur(24px);
+	-webkit-backdrop-filter: blur(24px);
+	border: 1px solid var(--color-glass-border);
+}
+
+@utility glow-accent {
+	box-shadow: 0 0 20px var(--color-accent-dim), 0 0 60px rgba(6, 182, 212, 0.05);
+}
+
+@utility glow-danger {
+	box-shadow: 0 0 20px rgba(239, 68, 68, 0.15), 0 0 60px rgba(239, 68, 68, 0.05);
+}
+
+html, body {
+	margin: 0;
+	padding: 0;
+	height: 100%;
+	width: 100%;
+	overflow: hidden;
+	background: var(--color-bg-primary);
+	color: var(--color-text-primary);
+	font-family: var(--font-sans);
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+	width: 6px;
+}
+
+::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+	background: rgba(255, 255, 255, 0.1);
+	border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+	background: rgba(255, 255, 255, 0.2);
+}
+
+/* MapLibre overrides for dark theme */
+.maplibregl-ctrl-group {
+	background: rgba(15, 23, 42, 0.85) !important;
+	border: 1px solid rgba(255, 255, 255, 0.08) !important;
+	backdrop-filter: blur(12px);
+	border-radius: 12px !important;
+	overflow: hidden;
+}
+
+.maplibregl-ctrl-group button {
+	background: transparent !important;
+	border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
+}
+
+.maplibregl-ctrl-group button:hover {
+	background: rgba(255, 255, 255, 0.05) !important;
+}
+
+.maplibregl-ctrl-group button .maplibregl-ctrl-icon {
+	filter: invert(1) brightness(0.8);
+}
+
+.maplibregl-ctrl-attrib {
+	background: rgba(15, 23, 42, 0.7) !important;
+	color: rgba(148, 163, 184, 0.6) !important;
+	font-size: 10px !important;
+	backdrop-filter: blur(8px);
+}
+
+.maplibregl-ctrl-attrib a {
+	color: rgba(148, 163, 184, 0.6) !important;
+}
+
+/* Pulse animation for live indicator */
+@keyframes pulse-ring {
+	0% { transform: scale(0.8); opacity: 1; }
+	100% { transform: scale(2); opacity: 0; }
+}
+
+.animate-pulse-ring {
+	animation: pulse-ring 1.5s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+}
+
+/* Slide transitions */
+@keyframes slide-in-left {
+	from { transform: translateX(-100%); opacity: 0; }
+	to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes slide-in-up {
+	from { transform: translateY(100%); opacity: 0; }
+	to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes fade-in {
+	from { opacity: 0; }
+	to { opacity: 1; }
+}
+
+@keyframes count-up {
+	from { opacity: 0; transform: translateY(8px); }
+	to { opacity: 1; transform: translateY(0); }
+}

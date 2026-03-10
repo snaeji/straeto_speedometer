@@ -1,5 +1,4 @@
 # Dart/Flutter
-build/
 .dart_tool/
 .packages
 
@@ -24,3 +23,8 @@ collector/pubspec.lock
 
 # Generated files
 *.g.dart
+
+# Node.js / SvelteKit
+node_modules/
+build/
+.svelte-kit/
