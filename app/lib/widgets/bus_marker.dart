@@ -5,8 +5,15 @@ import '../theme.dart';
 
 class BusMarkerWidget extends StatelessWidget {
   final BusLocation location;
+  final bool isSelected;
+  final VoidCallback? onTap;
 
-  const BusMarkerWidget({super.key, required this.location});
+  const BusMarkerWidget({
+    super.key,
+    required this.location,
+    this.isSelected = false,
+    this.onTap,
+  });
 
   Color get markerColor {
     if (location.speedKmh == null) return kNoDataColor;
@@ -24,45 +31,69 @@ class BusMarkerWidget extends StatelessWidget {
         ? '${location.speedKmh!.toStringAsFixed(0)}'
         : '?';
 
-    return Tooltip(
-      message:
-          'Bus ${location.busId}\n'
-          'Route ${location.routeNr}'
-          '${location.headsign != null ? " → ${location.headsign}" : ""}\n'
-          'Speed: $speedText km/h'
-          '${location.speedLimitKmh != null ? " / Limit: ${location.speedLimitKmh!.toStringAsFixed(0)}" : ""}',
+    return GestureDetector(
+      onTap: onTap,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          if (isSelected)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              margin: const EdgeInsets.only(bottom: 2),
+              decoration: BoxDecoration(
+                color: const Color(0xE016213E),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: markerColor, width: 1),
+                boxShadow: const [
+                  BoxShadow(color: Colors.black54, blurRadius: 4),
+                ],
+              ),
+              child: Text(
+                '$speedText km/h'
+                '${location.speedLimitKmh != null ? " / ${location.speedLimitKmh!.toStringAsFixed(0)}" : ""}',
+                style: TextStyle(
+                  color: markerColor,
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
           Container(
-            width: 28,
-            height: 28,
+            width: isSelected ? 34 : 28,
+            height: isSelected ? 34 : 28,
             decoration: BoxDecoration(
               color: markerColor,
               shape: BoxShape.circle,
-              border: Border.all(color: Colors.white, width: 1.5),
-              boxShadow: const [
-                BoxShadow(color: Colors.black38, blurRadius: 3),
+              border: Border.all(
+                color: isSelected ? Colors.white : Colors.white,
+                width: isSelected ? 2.5 : 1.5,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: isSelected ? markerColor.withValues(alpha: 0.5) : Colors.black38,
+                  blurRadius: isSelected ? 8 : 3,
+                ),
               ],
             ),
             alignment: Alignment.center,
             child: Text(
               location.routeNr,
-              style: const TextStyle(
+              style: TextStyle(
                 color: Colors.white,
-                fontSize: 10,
+                fontSize: isSelected ? 12 : 10,
                 fontWeight: FontWeight.bold,
               ),
             ),
           ),
-          Text(
-            '$speedText',
-            style: TextStyle(
-              color: markerColor,
-              fontSize: 9,
-              fontWeight: FontWeight.bold,
+          if (!isSelected)
+            Text(
+              speedText,
+              style: TextStyle(
+                color: markerColor,
+                fontSize: 9,
+                fontWeight: FontWeight.bold,
+              ),
             ),
-          ),
         ],
       ),
     );

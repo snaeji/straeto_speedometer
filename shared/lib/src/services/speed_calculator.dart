@@ -68,19 +68,13 @@ class SpeedCalculator {
     }
 
     // Step 2: Minimum distance threshold
+    // Always report 0 immediately — holding the last known speed would
+    // violate the "never overestimate" principle.
     if (distanceM < minDistanceThresholdM) {
-      final count = (_stationaryCount[busId] ?? 0) + 1;
-      _stationaryCount[busId] = count;
-
-      if (count >= stationaryConfirmCount) {
-        // Confirmed stationary — report 0 and clear speed history
-        _lastSpeed.remove(busId);
-        _speedBuffers.remove(busId);
-        return location.copyWith(speedKmh: 0);
-      }
-
-      // Not yet confirmed — hold last known speed
-      return location.copyWith(speedKmh: _lastSpeed[busId] ?? 0);
+      _stationaryCount[busId] = (_stationaryCount[busId] ?? 0) + 1;
+      _lastSpeed.remove(busId);
+      _speedBuffers.remove(busId);
+      return location.copyWith(speedKmh: 0);
     }
 
     // Bus is moving — reset stationary counter

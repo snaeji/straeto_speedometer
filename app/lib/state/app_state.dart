@@ -78,25 +78,35 @@ class AppState extends ChangeNotifier {
   void Function(List<String> staleBusIds)? onBusesRemoved;
 
   void updateBusLocations(List<BusLocation> locations) {
-    final nowMs = DateTime.now().millisecondsSinceEpoch;
-
     // Merge new locations into the map
     for (final loc in locations) {
       _busMap[loc.busId] = loc;
     }
 
-    // Remove buses that haven't been updated for a while
-    final staleIds = <String>[];
-    _busMap.removeWhere((busId, loc) {
-      final stale = (nowMs - loc.timestamp) > _busStaleThresholdSecs * 1000;
-      if (stale) staleIds.add(busId);
-      return stale;
-    });
+    // Remove buses that haven't been updated for a while (live mode only)
+    if (_mode == AppMode.live) {
+      final nowMs = DateTime.now().millisecondsSinceEpoch;
+      final staleIds = <String>[];
+      _busMap.removeWhere((busId, loc) {
+        final stale = (nowMs - loc.timestamp) > _busStaleThresholdSecs * 1000;
+        if (stale) staleIds.add(busId);
+        return stale;
+      });
 
-    if (staleIds.isNotEmpty) {
-      onBusesRemoved?.call(staleIds);
+      if (staleIds.isNotEmpty) {
+        onBusesRemoved?.call(staleIds);
+      }
     }
 
+    notifyListeners();
+  }
+
+  /// Replace all bus locations (for playback mode — clears previous frame).
+  void setBusLocations(List<BusLocation> locations) {
+    _busMap.clear();
+    for (final loc in locations) {
+      _busMap[loc.busId] = loc;
+    }
     notifyListeners();
   }
 
@@ -105,8 +115,18 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Whether the map should follow the selected bus.
+  /// Set to true on bus selection, set to false when user pans manually.
+  bool _followBus = false;
+  bool get followBus => _followBus;
+
+  set followBus(bool value) {
+    _followBus = value;
+  }
+
   void selectBus(String? busId) {
     _selectedBusId = busId == _selectedBusId ? null : busId;
+    _followBus = _selectedBusId != null;
     notifyListeners();
   }
 }

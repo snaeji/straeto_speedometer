@@ -19,7 +19,8 @@ const outlierMinTimeGapS = 1;
 
 // Step 2: Minimum distance threshold
 const minDistanceThresholdM = 10.0;
-const stationaryConfirmCount = 3; // consecutive below-threshold fixes before reporting 0
+// stationaryConfirmCount removed: we report 0 immediately when below threshold
+// to ensure the "never overestimate" principle is upheld.
 
 // Step 3: Speed smoothing (avg of raw speeds + endpoint cap)
 const smoothingBufferSize = 4;

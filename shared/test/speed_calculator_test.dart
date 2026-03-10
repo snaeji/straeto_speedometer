@@ -150,6 +150,19 @@ void main() {
     expect(result!.speedKmh!, lessThanOrEqualTo(outlierMaxSpeedKmh));
   });
 
+  test('moving bus that stops reports 0 immediately, not held speed', () {
+    // Bus moves at ~30 km/h, then stops
+    calc.processFix(_makeFix(64.13500, -21.9000, 0));
+    calc.processFix(_makeFix(64.13540, -21.9000, 5000)); // ~44m, moving
+    calc.processFix(_makeFix(64.13580, -21.9000, 10000)); // ~44m, moving
+
+    // Bus stops — next fix is < 10m from last
+    final stopped = calc.processFix(_makeFix(64.13581, -21.9000, 15000));
+    expect(stopped, isNotNull);
+    expect(stopped!.speedKmh, equals(0),
+        reason: 'must report 0 immediately when bus stops, not hold prior speed');
+  });
+
   test('independent buses do not interfere', () {
     calc.processFix(_makeFix(64.135, -21.900, 0, busId: 'bus-A'));
     calc.processFix(_makeFix(64.136, -21.900, 5000, busId: 'bus-A'));

@@ -37,11 +37,7 @@ class SpeedChart extends StatelessWidget {
                     BarChartRodData(
                       toY: speed,
                       width: 14,
-                      color: speed > 50
-                          ? kViolationColor
-                          : speed > 40
-                              ? kApproachingColor
-                              : kNormalColor,
+                      color: kNormalColor,
                       borderRadius: const BorderRadius.vertical(
                           top: Radius.circular(3)),
                     ),

@@ -89,17 +89,17 @@ class PlaybackState extends ChangeNotifier {
     notifyListeners();
   }
 
-  void stepForward() {
+  Future<void> stepForward() async {
     if (_currentTimestamp == null || _endTimestamp == null) return;
     _currentTimestamp = (_currentTimestamp! + 5000).clamp(_startTimestamp!, _endTimestamp!);
-    _loadCurrentFrame();
+    await _loadCurrentFrame();
     notifyListeners();
   }
 
-  void stepBackward() {
+  Future<void> stepBackward() async {
     if (_currentTimestamp == null || _startTimestamp == null) return;
     _currentTimestamp = (_currentTimestamp! - 5000).clamp(_startTimestamp!, _endTimestamp!);
-    _loadCurrentFrame();
+    await _loadCurrentFrame();
     notifyListeners();
   }
 
@@ -109,7 +109,7 @@ class PlaybackState extends ChangeNotifier {
       _currentTimestamp! - 5000,
       _currentTimestamp! + 5000,
     );
-    _appState.updateBusLocations(locations);
+    _appState.setBusLocations(locations);
   }
 
   @override
