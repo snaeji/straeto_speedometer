@@ -19,12 +19,15 @@ const outlierMinTimeGapS = 1;
 
 // Step 2: Minimum distance threshold
 const minDistanceThresholdM = 10.0;
+const stationaryConfirmCount = 3; // consecutive below-threshold fixes before reporting 0
 
-// Step 3: Position smoothing
-const smoothingBufferSize = 3;
+// Step 3: Speed smoothing (avg of raw speeds + endpoint cap)
+const smoothingBufferSize = 4;
 
 // Step 4: Conservative speed factor
-const conservativeSpeedFactor = 0.92;
+// Raised from 0.92 → 0.95: the new smoothing (min of avg speed, endpoint
+// speed) is already inherently conservative, so less haircut is needed.
+const conservativeSpeedFactor = 0.95;
 
 // Speed limit matching
 const defaultSpeedLimitKmh = 50.0;

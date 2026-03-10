@@ -63,7 +63,7 @@ double pointToLineSegmentDistanceM(
 }
 
 /// Convert distance in meters and time delta in seconds to speed in km/h.
-double speedKmh(double distanceM, int timeDeltaS) {
+double speedKmh(double distanceM, double timeDeltaS) {
   if (timeDeltaS <= 0) return 0;
   return (distanceM / 1000) / (timeDeltaS / 3600);
 }

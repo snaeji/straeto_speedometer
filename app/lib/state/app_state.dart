@@ -7,16 +7,20 @@ class AppState extends ChangeNotifier {
   AppMode _mode = AppMode.live;
   Set<String> _selectedRoutes = {};
   bool _sidebarExpanded = true;
-  List<BusLocation> _busLocations = [];
+  final Map<String, BusLocation> _busMap = {};
   List<BusLocation> _allData = [];
+  String? _selectedBusId;
+
+  /// Max age before a bus is removed from the live list (seconds).
+  static const _busStaleThresholdSecs = 30;
 
   AppMode get mode => _mode;
   bool get sidebarExpanded => _sidebarExpanded;
+  String? get selectedBusId => _selectedBusId;
 
-  int get activeBuses => _busLocations
-      .map((b) => b.busId)
-      .toSet()
-      .length;
+  List<BusLocation> get _busLocations => _busMap.values.toList();
+
+  int get activeBuses => _busMap.length;
 
   int get currentViolations =>
       filteredLocations.where((b) => b.isViolation).length;
@@ -30,10 +34,9 @@ class AppState extends ChangeNotifier {
   }
 
   List<BusLocation> get filteredLocations {
-    if (_selectedRoutes.isEmpty) return _busLocations;
-    return _busLocations
-        .where((b) => _selectedRoutes.contains(b.routeNr))
-        .toList();
+    final all = _busLocations;
+    if (_selectedRoutes.isEmpty) return all;
+    return all.where((b) => _selectedRoutes.contains(b.routeNr)).toList();
   }
 
   List<BusLocation> get allData => _allData;
@@ -72,12 +75,28 @@ class AppState extends ChangeNotifier {
   }
 
   void updateBusLocations(List<BusLocation> locations) {
-    _busLocations = locations;
+    final nowMs = DateTime.now().millisecondsSinceEpoch;
+
+    // Merge new locations into the map
+    for (final loc in locations) {
+      _busMap[loc.busId] = loc;
+    }
+
+    // Remove buses that haven't been updated for a while
+    _busMap.removeWhere((_, loc) {
+      return (nowMs - loc.timestamp) > _busStaleThresholdSecs * 1000;
+    });
+
     notifyListeners();
   }
 
   void loadAllData(List<BusLocation> data) {
     _allData = data;
+    notifyListeners();
+  }
+
+  void selectBus(String? busId) {
+    _selectedBusId = busId == _selectedBusId ? null : busId;
     notifyListeners();
   }
 }

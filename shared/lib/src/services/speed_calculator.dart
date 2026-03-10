@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import '../constants.dart';
 import '../models/bus_location.dart';
 import 'geo_utils.dart';
@@ -12,7 +14,9 @@ class _PositionFix {
 
 class SpeedCalculator {
   final Map<String, List<_PositionFix>> _busBuffers = {};
-  final Map<String, _PositionFix> _lastSmoothed = {};
+  final Map<String, List<double>> _speedBuffers = {};
+  final Map<String, double> _lastSpeed = {};
+  final Map<String, int> _stationaryCount = {};
 
   /// Process a new GPS fix. Returns BusLocation with speedKmh set,
   /// or null if rejected by outlier detection.
@@ -25,7 +29,9 @@ class SpeedCalculator {
     // First fix for this bus
     if (buffer == null || buffer.isEmpty) {
       _busBuffers[busId] = [newFix];
-      _lastSmoothed.remove(busId);
+      _speedBuffers.remove(busId);
+      _lastSpeed.remove(busId);
+      _stationaryCount[busId] = 0;
       return location.copyWith(speedKmh: 0);
     }
 
@@ -34,8 +40,7 @@ class SpeedCalculator {
     // Step 1: Outlier rejection
     final distanceM =
         haversineDistanceM(lastFix.lat, lastFix.lng, newFix.lat, newFix.lng);
-    final timeDeltaMs = newFix.timestamp - lastFix.timestamp;
-    final timeDeltaS = timeDeltaMs ~/ 1000;
+    final timeDeltaS = (newFix.timestamp - lastFix.timestamp) / 1000.0;
 
     if (timeDeltaS < outlierMinTimeGapS) return null;
     if (distanceM > outlierMaxDistanceM) return null;
@@ -43,68 +48,73 @@ class SpeedCalculator {
     final rawSpeed = speedKmh(distanceM, timeDeltaS);
     if (rawSpeed > outlierMaxSpeedKmh) return null;
 
-    // Step 2: Minimum distance threshold
-    if (distanceM < minDistanceThresholdM) {
-      buffer.add(newFix);
-      if (buffer.length > smoothingBufferSize) {
-        buffer.removeAt(0);
-      }
-      return location.copyWith(speedKmh: 0);
-    }
-
-    // Step 3: Position smoothing
+    // Add fix to position buffer
     buffer.add(newFix);
     if (buffer.length > smoothingBufferSize) {
       buffer.removeAt(0);
     }
 
-    // Compute smoothed position
-    var smoothLat = 0.0;
-    var smoothLng = 0.0;
-    for (final fix in buffer) {
-      smoothLat += fix.lat;
-      smoothLng += fix.lng;
-    }
-    smoothLat /= buffer.length;
-    smoothLng /= buffer.length;
+    // Step 2: Minimum distance threshold
+    if (distanceM < minDistanceThresholdM) {
+      final count = (_stationaryCount[busId] ?? 0) + 1;
+      _stationaryCount[busId] = count;
 
-    final currentSmoothed =
-        _PositionFix(smoothLat, smoothLng, newFix.timestamp);
-    final prevSmoothed = _lastSmoothed[busId];
-    _lastSmoothed[busId] = currentSmoothed;
+      if (count >= stationaryConfirmCount) {
+        // Confirmed stationary — report 0 and clear speed history
+        _lastSpeed.remove(busId);
+        _speedBuffers.remove(busId);
+        return location.copyWith(speedKmh: 0);
+      }
 
-    if (prevSmoothed == null) {
-      return location.copyWith(speedKmh: 0);
+      // Not yet confirmed — hold last known speed
+      return location.copyWith(speedKmh: _lastSpeed[busId] ?? 0);
     }
 
-    final smoothedDistanceM = haversineDistanceM(
-      prevSmoothed.lat,
-      prevSmoothed.lng,
-      currentSmoothed.lat,
-      currentSmoothed.lng,
-    );
-    final smoothedTimeDeltaS =
-        (currentSmoothed.timestamp - prevSmoothed.timestamp) ~/ 1000;
+    // Bus is moving — reset stationary counter
+    _stationaryCount[busId] = 0;
 
-    if (smoothedTimeDeltaS <= 0) {
-      return location.copyWith(speedKmh: 0);
+    // Step 3: Speed smoothing — average of raw speeds capped by endpoint speed
+    final spdBuffer = _speedBuffers.putIfAbsent(busId, () => []);
+    spdBuffer.add(rawSpeed);
+    if (spdBuffer.length > smoothingBufferSize) {
+      spdBuffer.removeAt(0);
     }
 
-    final smoothedSpeed = speedKmh(smoothedDistanceM, smoothedTimeDeltaS);
+    final avgSpeed = spdBuffer.reduce((a, b) => a + b) / spdBuffer.length;
 
-    // Step 4: Conservative speed factor
-    final finalSpeed = smoothedSpeed * conservativeSpeedFactor;
+    // Endpoint speed: displacement across full buffer / time across full buffer
+    double smoothedSpeed = avgSpeed;
+    if (buffer.length >= 2) {
+      final first = buffer.first;
+      final last = buffer.last;
+      final epDistM =
+          haversineDistanceM(first.lat, first.lng, last.lat, last.lng);
+      final epTimeS = (last.timestamp - first.timestamp) / 1000.0;
+      if (epTimeS > 0) {
+        final endpointSpeed = speedKmh(epDistM, epTimeS);
+        smoothedSpeed = min(avgSpeed, endpointSpeed);
+      }
+    }
 
+    // Step 4: Conservative speed factor, capped at outlier max
+    final finalSpeed =
+        (smoothedSpeed * conservativeSpeedFactor).clamp(0.0, outlierMaxSpeedKmh);
+
+    _lastSpeed[busId] = finalSpeed;
     return location.copyWith(speedKmh: finalSpeed);
   }
 
   void resetBus(String busId) {
     _busBuffers.remove(busId);
-    _lastSmoothed.remove(busId);
+    _speedBuffers.remove(busId);
+    _lastSpeed.remove(busId);
+    _stationaryCount.remove(busId);
   }
 
   void resetAll() {
     _busBuffers.clear();
-    _lastSmoothed.clear();
+    _speedBuffers.clear();
+    _lastSpeed.clear();
+    _stationaryCount.clear();
   }
 }

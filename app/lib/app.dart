@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
+import 'state/app_state.dart';
 import 'theme.dart';
 import 'widgets/bus_map.dart';
 import 'widgets/playback/playback_bar.dart';
 import 'widgets/sidebar/sidebar.dart';
+import 'widgets/speed_graph.dart';
 import 'widgets/top_bar.dart';
 
 class StraetoApp extends StatelessWidget {
@@ -25,6 +28,8 @@ class AppShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final showGraph = context.watch<AppState>().selectedBusId != null;
+
     return Scaffold(
       body: Column(
         children: [
@@ -48,6 +53,7 @@ class AppShell extends StatelessWidget {
               ],
             ),
           ),
+          if (showGraph) const SpeedGraph(),
         ],
       ),
     );

@@ -93,6 +93,26 @@ class StorageService {
     return (earliest, latest);
   }
 
+  Future<List<BusLocation>> getBusHistory(String busId, {int maxMinutes = 30}) async {
+    if (_db == null) return [];
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final startMs = now - maxMinutes * 60 * 1000;
+    final txn = _db!.transaction(_storeName, idbModeReadOnly);
+    final store = txn.objectStore(_storeName);
+    final index = store.index('timestamp');
+    final range = KeyRange.bound(startMs, now);
+    final results = <BusLocation>[];
+
+    final cursors = index.openCursor(range: range, autoAdvance: true);
+    await for (final cursor in cursors) {
+      final map = cursor.value as Map;
+      if (map['b'] == busId) {
+        results.add(BusLocation.fromJsonLine(Map<String, dynamic>.from(map)));
+      }
+    }
+    return results;
+  }
+
   Future<int> getStorageSize() async {
     if (_db == null) return 0;
     final txn = _db!.transaction(_storeName, idbModeReadOnly);

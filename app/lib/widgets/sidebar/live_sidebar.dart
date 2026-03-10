@@ -175,7 +175,9 @@ class _BusList extends StatelessWidget {
       ..sort((a, b) {
         final aNum = int.tryParse(a.routeNr) ?? 999;
         final bNum = int.tryParse(b.routeNr) ?? 999;
-        return aNum.compareTo(bNum);
+        final routeCmp = aNum.compareTo(bNum);
+        if (routeCmp != 0) return routeCmp;
+        return a.busId.compareTo(b.busId);
       });
 
     return ListView.builder(
@@ -198,8 +200,14 @@ class _BusList extends StatelessWidget {
           speedColor = kNormalColor;
         }
 
+        final appState = context.watch<AppState>();
+        final isSelected = appState.selectedBusId == bus.busId;
+
         return ListTile(
           dense: true,
+          selected: isSelected,
+          selectedTileColor: Colors.white.withValues(alpha: 0.05),
+          onTap: () => appState.selectBus(bus.busId),
           leading: CircleAvatar(
             radius: 14,
             backgroundColor: speedColor.withValues(alpha: 0.2),
@@ -216,13 +224,27 @@ class _BusList extends StatelessWidget {
           subtitle: bus.headsign != null
               ? Text(bus.headsign!, style: const TextStyle(fontSize: 10))
               : null,
-          trailing: Text(
-            speedText,
-            style: TextStyle(
-              color: speedColor,
-              fontWeight: FontWeight.bold,
-              fontSize: 12,
-            ),
+          trailing: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                speedText,
+                style: TextStyle(
+                  color: speedColor,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
+              ),
+              if (bus.speedLimitKmh != null)
+                Text(
+                  'limit ${bus.speedLimitKmh!.toStringAsFixed(0)} km/h',
+                  style: const TextStyle(
+                    color: Colors.white38,
+                    fontSize: 10,
+                  ),
+                ),
+            ],
           ),
         );
       },
