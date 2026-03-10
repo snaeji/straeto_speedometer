@@ -43,10 +43,23 @@ class SpeedCalculator {
     final timeDeltaS = (newFix.timestamp - lastFix.timestamp) / 1000.0;
 
     if (timeDeltaS < outlierMinTimeGapS) return null;
-    if (distanceM > outlierMaxDistanceM) return null;
+    if (distanceM > outlierMaxDistanceM) {
+      // Data discontinuity — reset this bus so next valid fix starts fresh
+      _busBuffers[busId] = [newFix];
+      _speedBuffers.remove(busId);
+      _lastSpeed.remove(busId);
+      _stationaryCount[busId] = 0;
+      return null;
+    }
 
     final rawSpeed = speedKmh(distanceM, timeDeltaS);
-    if (rawSpeed > outlierMaxSpeedKmh) return null;
+    if (rawSpeed > outlierMaxSpeedKmh) {
+      _busBuffers[busId] = [newFix];
+      _speedBuffers.remove(busId);
+      _lastSpeed.remove(busId);
+      _stationaryCount[busId] = 0;
+      return null;
+    }
 
     // Add fix to position buffer
     buffer.add(newFix);

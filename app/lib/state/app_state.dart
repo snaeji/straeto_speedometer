@@ -74,6 +74,9 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Callback invoked with bus IDs that were removed due to staleness.
+  void Function(List<String> staleBusIds)? onBusesRemoved;
+
   void updateBusLocations(List<BusLocation> locations) {
     final nowMs = DateTime.now().millisecondsSinceEpoch;
 
@@ -83,9 +86,16 @@ class AppState extends ChangeNotifier {
     }
 
     // Remove buses that haven't been updated for a while
-    _busMap.removeWhere((_, loc) {
-      return (nowMs - loc.timestamp) > _busStaleThresholdSecs * 1000;
+    final staleIds = <String>[];
+    _busMap.removeWhere((busId, loc) {
+      final stale = (nowMs - loc.timestamp) > _busStaleThresholdSecs * 1000;
+      if (stale) staleIds.add(busId);
+      return stale;
     });
+
+    if (staleIds.isNotEmpty) {
+      onBusesRemoved?.call(staleIds);
+    }
 
     notifyListeners();
   }

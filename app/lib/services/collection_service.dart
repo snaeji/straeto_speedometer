@@ -14,6 +14,11 @@ class CollectionService {
         _speedCalculator = speedCalculator,
         _speedLimitService = speedLimitService;
 
+  void resetBus(String busId) {
+    _speedCalculator.resetBus(busId);
+    _lastSeenTimestamp.remove(busId);
+  }
+
   /// Perform one collection cycle.
   /// Returns processed (deduplicated, speed-calculated) bus locations.
   Future<List<BusLocation>> collectOnce() async {

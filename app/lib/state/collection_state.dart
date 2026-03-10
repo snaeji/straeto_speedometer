@@ -33,6 +33,13 @@ class CollectionState extends ChangeNotifier {
       speedCalculator: SpeedCalculator(),
       speedLimitService: speedLimitService,
     );
+
+    // Clean up speed calculator state when buses go stale
+    _appState.onBusesRemoved = (staleBusIds) {
+      for (final busId in staleBusIds) {
+        _collectionService.resetBus(busId);
+      }
+    };
   }
 
   Future<void> startCollecting() async {
