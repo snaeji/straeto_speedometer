@@ -1,5 +1,7 @@
 # Straeto Speedometer
 
+> **Note:** Everything below is reference material from a previous implementation. All design decisions (tech stack, architecture, storage, etc.) will be made fresh for the new build. This documentation exists solely as context — the API endpoints, data structures, and domain knowledge are useful, but nothing here is prescriptive.
+
 ## Project Goal
 
 Real-time bus speed monitoring system for Reykjavík's public bus system (Straeto). The system:
