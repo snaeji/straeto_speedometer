@@ -1,0 +1,26 @@
+# Dart/Flutter
+build/
+.dart_tool/
+.packages
+
+# IDE
+*.iml
+.idea/
+.vscode/
+
+# Flutter
+app/.flutter-plugins
+app/.flutter-plugins-dependencies
+
+# Package lock files for libraries (keep app/pubspec.lock)
+shared/pubspec.lock
+collector/pubspec.lock
+
+# Collector output data
+*.jsonl
+
+# macOS
+.DS_Store
+
+# Generated files
+*.g.dart
