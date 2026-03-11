@@ -17,6 +17,18 @@
 		return 'rgba(0, 0, 0, 0)'; // night
 	}
 	const ambientColor = getAmbientColor();
+
+	let panelExpanded = $state(false);
+
+	$effect(() => {
+		if (!busStore.selectedBusId) panelExpanded = false;
+	});
+
+	// Sidebar right edge + gap, so expanded chart bar doesn't cover it
+	const sidebarWidth = $derived(appStore.mode === 'stats' ? 420 : 320);
+	const chartBarLeft = $derived(
+		appStore.sidebarOpen ? sidebarWidth + 24 : 12
+	);
 </script>
 
 <div class="h-screen w-screen overflow-hidden bg-bg-primary relative">
@@ -47,15 +59,10 @@
 		<Sidebar />
 	</div>
 
-	<!-- Bus Detail Panel (floating glass, right side) -->
+	<!-- Bus Detail Panel (card at top-right, chart bar at bottom when expanded) -->
 	{#if busStore.selectedBusId}
-		<div
-			class="absolute right-3 z-10 transition-all duration-300"
-			style="top: 68px;
-				bottom: {appStore.mode === 'playback' ? '88px' : '12px'};
-				transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1)"
-		>
-			<SpeedGraph />
+		<div class="absolute right-3 z-10" style="top: 68px">
+			<SpeedGraph bind:expanded={panelExpanded} {chartBarLeft} />
 		</div>
 	{/if}
 
@@ -74,7 +81,7 @@
 
 	<!-- Keyboard shortcut hint -->
 	<div class="absolute right-4 z-[2] text-text-muted text-[10px] font-mono opacity-30 pointer-events-none select-none transition-all duration-300"
-		style:bottom={busStore.selectedBusId ? '210px' : (appStore.mode === 'playback' ? '92px' : '16px')}
+		style:bottom={busStore.selectedBusId && panelExpanded ? '188px' : (appStore.mode === 'playback' ? '92px' : '16px')}
 	>
 		B sidebar &middot; 1-4 modes &middot; Esc deselect &middot; F follow
 	</div>
