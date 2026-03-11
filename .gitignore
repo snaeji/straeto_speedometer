@@ -16,7 +16,8 @@ shared/pubspec.lock
 collector/pubspec.lock
 
 # Collector output data
-*.jsonl
+data/*.jsonl
+!data/sample.jsonl
 
 # macOS
 .DS_Store
