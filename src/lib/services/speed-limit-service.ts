@@ -15,7 +15,9 @@ export class SpeedLimitService {
 
 	/** Load segments from a parsed GeoJSON FeatureCollection. */
 	loadFromGeoJson(geoJson: GeoJsonFeatureCollection): void {
-		this.segments = geoJson.features.map(parseSegment);
+		this.segments = geoJson.features
+			.filter((f) => f.properties.GOTUFLOKKUR !== 5) // Exclude pedestrian zones
+			.map(parseSegment);
 	}
 
 	/**

@@ -166,7 +166,7 @@
 				} else {
 					const frac = (t - a.t) / gap;
 					speeds.push([t, a.speed + (b.speed - a.speed) * frac]);
-					limits.push([t, a.limit + (b.limit - a.limit) * frac]);
+					limits.push([t, a.limit]); // Step interpolation — limits are discrete, not gradual
 				}
 			}
 		}
@@ -235,7 +235,7 @@
 				},
 				{
 					name: 'Limit', type: 'line', data: limits,
-					smooth: false, symbol: 'none',
+					step: 'end', smooth: false, symbol: 'none',
 					lineStyle: { color: '#f59e0b', width: 1, type: 'dashed' },
 				},
 			],
