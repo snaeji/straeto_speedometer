@@ -486,22 +486,14 @@
 			">${Math.round(speed)}</div>`;
 		}
 
-		// Selected info panel
-		if (isSelected && speed != null) {
+		// Selection ring (replaces inline info panel — detail panel is on right side)
+		if (isSelected) {
 			html += `<div style="
-				position: absolute; top: ${size / 2 + 14}px; left: 50%; transform: translateX(-50%);
-				background: rgba(3, 7, 18, 0.95); backdrop-filter: blur(16px);
-				border: 1px solid rgba(255,255,255,0.1); border-radius: 10px;
-				padding: 6px 10px; white-space: nowrap; z-index: 5;
-				font-family: var(--font-mono); color: white;
-				box-shadow: 0 8px 24px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.05);
-				animation: marker-info-appear 0.2s ease-out;
-			">
-				<div style="font-size: 13px; font-weight: 700; letter-spacing: -0.5px;">
-					<span style="color: ${color}">${speed.toFixed(1)}</span>
-					<span style="color: rgba(148,163,184,0.4); font-size: 10px; font-weight: 400"> / ${limit ?? '--'} km/h</span>
-				</div>
-			</div>`;
+				position: absolute; inset: -6px; border-radius: 50%;
+				border: 2px solid rgba(6, 182, 212, 0.6);
+				pointer-events: none;
+				box-shadow: 0 0 12px rgba(6, 182, 212, 0.3), inset 0 0 8px rgba(6, 182, 212, 0.1);
+			"></div>`;
 		}
 
 		el.innerHTML = html;
