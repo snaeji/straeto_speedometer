@@ -11,6 +11,11 @@
 	let markers = new Map<string, { marker: maplibregl.Marker; element: HTMLDivElement }>();
 	let resizeObserver: ResizeObserver | null = null;
 
+	// Track position history for bus trails
+	let busTrails = new Map<string, { lng: number; lat: number; ts: number }[]>();
+	const TRAIL_MAX_POINTS = 30;
+	const TRAIL_MAX_AGE_MS = 120_000; // 2 minutes
+
 	onMount(() => {
 		map = new maplibregl.Map({
 			container: mapContainer,
@@ -45,12 +50,11 @@
 
 		map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
 
-		// Wait for map to load before adding layers
 		map.on('load', () => {
 			if (!map) return;
 			mapLoaded = true;
 
-			// Add speed limit road overlay (before heatmap so heatmap renders on top)
+			// Speed limit road overlay
 			if (appStore.speedLimitGeoJson) {
 				map.addSource('speed-limits', {
 					type: 'geojson',
@@ -80,7 +84,28 @@
 				});
 			}
 
-			// Add heatmap source and layer
+			// Bus trail lines source
+			map.addSource('bus-trails', {
+				type: 'geojson',
+				data: { type: 'FeatureCollection', features: [] },
+			});
+
+			map.addLayer({
+				id: 'bus-trail-lines',
+				type: 'line',
+				source: 'bus-trails',
+				paint: {
+					'line-color': ['get', 'color'],
+					'line-width': 2.5,
+					'line-opacity': ['get', 'opacity'],
+				},
+				layout: {
+					'line-cap': 'round',
+					'line-join': 'round',
+				},
+			});
+
+			// Heatmap source and layer
 			map.addSource('heatmap-data', {
 				type: 'geojson',
 				data: { type: 'FeatureCollection', features: [] },
@@ -111,7 +136,6 @@
 			});
 		});
 
-		// Handle map click to deselect
 		map.on('click', (e: maplibregl.MapMouseEvent) => {
 			const target = e.originalEvent.target as HTMLElement;
 			if (!target.closest('.bus-marker')) {
@@ -119,7 +143,6 @@
 			}
 		});
 
-		// Disable auto-follow on manual interaction
 		map.on('dragstart', () => {
 			busStore.autoFollow = false;
 		});
@@ -145,12 +168,14 @@
 
 		const currentBuses = busStore.activeBuses;
 		const currentIds = new Set(currentBuses.map((b) => b.busId));
+		const now = Date.now();
 
 		// Remove markers for buses that are gone
 		for (const [busId, { marker }] of markers) {
 			if (!currentIds.has(busId)) {
 				marker.remove();
 				markers.delete(busId);
+				busTrails.delete(busId);
 			}
 		}
 
@@ -160,16 +185,26 @@
 			const color = getStatusColor(status);
 			const isSelected = bus.busId === busStore.selectedBusId;
 
+			// Update trail history
+			let trail = busTrails.get(bus.busId);
+			if (!trail) {
+				trail = [];
+				busTrails.set(bus.busId, trail);
+			}
+			const lastPoint = trail[trail.length - 1];
+			if (!lastPoint || lastPoint.lng !== bus.lng || lastPoint.lat !== bus.lat) {
+				trail.push({ lng: bus.lng, lat: bus.lat, ts: now });
+				// Prune old points
+				while (trail.length > TRAIL_MAX_POINTS) trail.shift();
+				while (trail.length > 0 && now - trail[0].ts > TRAIL_MAX_AGE_MS) trail.shift();
+			}
+
 			const existing = markers.get(bus.busId);
 			if (existing) {
-				// Update position
 				existing.marker.setLngLat([bus.lng, bus.lat]);
-
-				// Update element
-				updateMarkerElement(existing.element, bus.routeNr, color, status, isSelected, bus.speedKmh, bus.speedLimitKmh);
+				updateMarkerElement(existing.element, bus.routeNr, color, status, isSelected, bus.speedKmh, bus.speedLimitKmh, bus.direction);
 			} else {
-				// Create new marker
-				const el = createMarkerElement(bus.routeNr, color, status, isSelected, bus.busId, bus.speedKmh, bus.speedLimitKmh);
+				const el = createMarkerElement(bus.routeNr, color, status, isSelected, bus.busId, bus.speedKmh, bus.speedLimitKmh, bus.direction);
 				const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
 					.setLngLat([bus.lng, bus.lat])
 					.addTo(map!);
@@ -177,6 +212,9 @@
 				markers.set(bus.busId, { marker, element: el });
 			}
 		}
+
+		// Update trail lines on map
+		updateTrailLines(currentBuses);
 	});
 
 	// Auto-follow selected bus
@@ -215,6 +253,39 @@
 		});
 	});
 
+	function updateTrailLines(buses: typeof busStore.activeBuses) {
+		if (!map || !mapLoaded) return;
+		const source = map.getSource('bus-trails') as maplibregl.GeoJSONSource | undefined;
+		if (!source) return;
+
+		const features: GeoJSON.Feature[] = [];
+		for (const bus of buses) {
+			const trail = busTrails.get(bus.busId);
+			if (!trail || trail.length < 2) continue;
+
+			const status = getBusStatus(bus);
+			const color = getStatusColor(status);
+
+			// Create line segments with decreasing opacity
+			for (let i = 1; i < trail.length; i++) {
+				const opacity = (i / trail.length) * 0.5;
+				features.push({
+					type: 'Feature',
+					geometry: {
+						type: 'LineString',
+						coordinates: [
+							[trail[i - 1].lng, trail[i - 1].lat],
+							[trail[i].lng, trail[i].lat],
+						],
+					},
+					properties: { color, opacity },
+				});
+			}
+		}
+
+		source.setData({ type: 'FeatureCollection', features });
+	}
+
 	function createMarkerElement(
 		routeNr: string,
 		color: string,
@@ -223,6 +294,7 @@
 		busId: string,
 		speed?: number,
 		limit?: number,
+		direction?: number,
 	): HTMLDivElement {
 		const el = document.createElement('div');
 		el.className = 'bus-marker';
@@ -230,7 +302,7 @@
 			e.stopPropagation();
 			busStore.selectBus(busStore.selectedBusId === busId ? null : busId);
 		});
-		updateMarkerElement(el, routeNr, color, status, isSelected, speed, limit);
+		updateMarkerElement(el, routeNr, color, status, isSelected, speed, limit, direction);
 		return el;
 	}
 
@@ -242,37 +314,100 @@
 		isSelected: boolean,
 		speed?: number,
 		limit?: number,
+		direction?: number,
 	) {
-		const size = isSelected ? 36 : 28;
-		const borderWidth = isSelected ? 3 : 2;
-		const fontSize = isSelected ? 12 : 10;
-		const glow = status === 'violation'
-			? `0 0 12px ${color}60, 0 0 24px ${color}20`
-			: isSelected
-				? '0 0 12px rgba(6, 182, 212, 0.4)'
-				: '0 2px 8px rgba(0,0,0,0.5)';
+		const size = isSelected ? 40 : 32;
+		const fontSize = isSelected ? 13 : 11;
 
-		let html = `<div style="
+		// Outer glow ring
+		const glowSize = size + 16;
+		const glowColor = status === 'violation' ? color : isSelected ? '#06b6d4' : color;
+		const glowOpacity = status === 'violation' ? 0.35 : isSelected ? 0.25 : 0.12;
+
+		// Direction arrow rotation
+		const rotation = direction != null ? direction : 0;
+		const showDirection = speed != null && speed > 2;
+
+		let html = '';
+
+		// Violation pulse rings (animated)
+		if (status === 'violation') {
+			html += `<div class="violation-pulse" style="
+				position: absolute; inset: -12px; border-radius: 50%;
+				border: 2px solid ${color};
+				animation: violation-ring 1.5s ease-out infinite;
+			"></div>`;
+			html += `<div class="violation-pulse" style="
+				position: absolute; inset: -12px; border-radius: 50%;
+				border: 2px solid ${color};
+				animation: violation-ring 1.5s ease-out infinite 0.5s;
+			"></div>`;
+		}
+
+		// Ambient glow
+		html += `<div style="
+			position: absolute; inset: -8px; border-radius: 50%;
+			background: radial-gradient(circle, ${glowColor}${Math.round(glowOpacity * 255).toString(16).padStart(2, '0')} 0%, transparent 70%);
+			pointer-events: none;
+		"></div>`;
+
+		// Direction indicator (triangle behind marker)
+		if (showDirection) {
+			html += `<div style="
+				position: absolute; top: 50%; left: 50%;
+				width: 0; height: 0;
+				border-left: 5px solid transparent; border-right: 5px solid transparent;
+				border-bottom: 14px solid ${color}80;
+				transform: translate(-50%, -50%) rotate(${rotation}deg) translateY(-${size / 2 + 6}px);
+				pointer-events: none;
+			"></div>`;
+		}
+
+		// Main marker circle
+		html += `<div style="
 			width: ${size}px; height: ${size}px; border-radius: 50%;
-			background: ${color}; border: ${borderWidth}px solid rgba(255,255,255,${isSelected ? 0.8 : 0.4});
+			background: radial-gradient(circle at 35% 35%, ${color}ee, ${color}aa);
+			border: 2px solid rgba(255,255,255,${isSelected ? 0.7 : 0.3});
 			display: flex; align-items: center; justify-content: center;
-			font-size: ${fontSize}px; font-weight: 600; color: white;
-			cursor: pointer; transition: all 0.2s; box-shadow: ${glow};
-			font-family: var(--font-sans);
+			font-size: ${fontSize}px; font-weight: 700; color: white;
+			cursor: pointer; position: relative; z-index: 2;
+			box-shadow: 0 0 ${isSelected ? 20 : 10}px ${glowColor}40,
+				0 2px 8px rgba(0,0,0,0.5),
+				inset 0 1px 2px rgba(255,255,255,0.15);
+			font-family: var(--font-sans); letter-spacing: -0.5px;
+			text-shadow: 0 1px 3px rgba(0,0,0,0.5);
 		">${routeNr}</div>`;
 
+		// Speed badge (always visible when there's speed data)
+		if (speed != null && speed > 0) {
+			const speedColor = status === 'violation' ? '#ef4444' : status === 'approaching' ? '#f59e0b' : '#10b981';
+			html += `<div style="
+				position: absolute; top: -8px; right: -8px; z-index: 3;
+				background: rgba(3, 7, 18, 0.92); backdrop-filter: blur(8px);
+				border: 1px solid ${speedColor}40;
+				border-radius: 6px; padding: 1px 4px;
+				font-size: 9px; font-weight: 600; color: ${speedColor};
+				font-family: var(--font-mono); white-space: nowrap;
+				box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+				line-height: 1.3;
+			">${Math.round(speed)}</div>`;
+		}
+
+		// Selected info panel
 		if (isSelected && speed != null) {
 			html += `<div style="
-				position: absolute; top: ${size + 4}px; left: 50%; transform: translateX(-50%);
-				background: rgba(8, 14, 30, 0.9); backdrop-filter: blur(12px);
-				border: 1px solid rgba(255,255,255,0.1); border-radius: 8px;
-				padding: 3px 8px; white-space: nowrap;
-				font-size: 11px; font-family: var(--font-mono); color: white;
-				box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+				position: absolute; top: ${size / 2 + 14}px; left: 50%; transform: translateX(-50%);
+				background: rgba(3, 7, 18, 0.95); backdrop-filter: blur(16px);
+				border: 1px solid rgba(255,255,255,0.1); border-radius: 10px;
+				padding: 6px 10px; white-space: nowrap; z-index: 5;
+				font-family: var(--font-mono); color: white;
+				box-shadow: 0 8px 24px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.05);
+				animation: marker-info-appear 0.2s ease-out;
 			">
-				<span style="color: ${color}">${speed.toFixed(1)}</span>
-				<span style="color: rgba(148,163,184,0.6)"> / ${limit ?? '--'}</span>
-				<span style="color: rgba(148,163,184,0.4); font-size: 9px"> km/h</span>
+				<div style="font-size: 13px; font-weight: 700; letter-spacing: -0.5px;">
+					<span style="color: ${color}">${speed.toFixed(1)}</span>
+					<span style="color: rgba(148,163,184,0.4); font-size: 10px; font-weight: 400"> / ${limit ?? '--'} km/h</span>
+				</div>
 			</div>`;
 		}
 
@@ -289,5 +424,17 @@
 	   pan/zoom, making them appear to float in the wrong location (e.g. the sea). */
 	:global(.bus-marker) {
 		will-change: transform;
+	}
+
+	/* Violation pulse ring animation */
+	@keyframes violation-ring {
+		0% { transform: scale(0.8); opacity: 0.8; }
+		100% { transform: scale(2.2); opacity: 0; }
+	}
+
+	/* Info panel appear */
+	@keyframes marker-info-appear {
+		from { opacity: 0; transform: translateX(-50%) translateY(-4px); }
+		to { opacity: 1; transform: translateX(-50%) translateY(0); }
 	}
 </style>

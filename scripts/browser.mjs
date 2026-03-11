@@ -34,7 +34,7 @@ async function connectOrLaunch() {
 	if (existsSync(WS_FILE)) {
 		const wsEndpoint = readFileSync(WS_FILE, 'utf-8').trim();
 		try {
-			const browser = await puppeteer.connect({ browserWSEndpoint: wsEndpoint });
+			const browser = await puppeteer.connect({ browserWSEndpoint: wsEndpoint, defaultViewport: null });
 			const pages = await browser.pages();
 			let page = pages.find(p => p.url().includes('localhost:5173'));
 			if (!page) {
@@ -82,7 +82,7 @@ async function connectOrLaunch() {
 	if (!wsEndpoint) throw new Error('Chrome failed to start');
 	writeFileSync(WS_FILE, wsEndpoint);
 
-	const browser = await puppeteer.connect({ browserWSEndpoint: wsEndpoint });
+	const browser = await puppeteer.connect({ browserWSEndpoint: wsEndpoint, defaultViewport: null });
 	const pages = await browser.pages();
 	let page = pages.find(p => p.url().includes('localhost:5173'));
 

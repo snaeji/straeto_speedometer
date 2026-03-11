@@ -7,7 +7,7 @@
 	import RouteFilter from './RouteFilter.svelte';
 </script>
 
-<div class="mx-3 mt-3 rounded-2xl glass-strong px-4 py-2.5 flex items-center gap-4">
+<div class="mx-3 mt-3 rounded-2xl glass-strong px-4 py-2.5 flex items-center gap-3 min-w-0 overflow-hidden">
 	<!-- Left: Menu + Logo -->
 	<div class="flex items-center gap-3 shrink-0">
 		<button
@@ -25,14 +25,14 @@
 		</button>
 
 		<div class="flex items-center gap-2">
-			<div class="w-7 h-7 rounded-lg bg-accent/15 flex items-center justify-center">
+			<div class="w-7 h-7 rounded-lg bg-accent/15 flex items-center justify-center shrink-0">
 				<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" class="text-accent" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 					<circle cx="12" cy="12" r="10" />
 					<path d="M12 6v6l4 2" />
 				</svg>
 			</div>
 			<span class="text-sm font-semibold tracking-wider text-text-primary">STRAETO</span>
-			{#if collectionStore.isCollecting || collectionStore.isPreviewing}
+			{#if collectionStore.isCollecting || collectionStore.isPreviewing || collectionStore.isDemoMode}
 				<div class="relative flex items-center">
 					<div class="w-2 h-2 rounded-full bg-success"></div>
 					<div class="absolute w-2 h-2 rounded-full bg-success animate-pulse-ring"></div>
@@ -42,13 +42,13 @@
 	</div>
 
 	<!-- Center: Mode Switcher -->
-	<div class="flex-1 flex justify-center">
+	<div class="flex-1 flex justify-center min-w-0">
 		<ModeSwitcher />
 	</div>
 
 	<!-- Right: KPIs + Route Filter -->
-	<div class="flex items-center gap-3 shrink-0">
-		<div class="flex items-center gap-2">
+	<div class="flex items-center gap-2 shrink-0">
+		<div class="flex items-center gap-1.5">
 			<KpiCard
 				label="Buses"
 				value={busStore.activeCount}

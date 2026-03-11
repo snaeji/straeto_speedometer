@@ -2,11 +2,13 @@ import { POLLING_INTERVAL_MS } from '$lib/utils/constants';
 import { CollectionService } from '$lib/services/collection-service';
 import { SpeedLimitService } from '$lib/services/speed-limit-service';
 import { StorageService } from '$lib/services/storage-service';
+import { generateMockData, resetMockData } from '$lib/services/mock-data';
 import { busStore } from './buses.svelte';
 
 class CollectionStore {
 	isCollecting = $state(false);
 	isPreviewing = $state(false);
+	isDemoMode = $state(false);
 	recordsCollected = $state(0);
 	violationsDetected = $state(0);
 	startedAt = $state<number | null>(null);
@@ -16,6 +18,7 @@ class CollectionStore {
 
 	private timer: ReturnType<typeof setInterval> | null = null;
 	private previewTimer: ReturnType<typeof setInterval> | null = null;
+	private demoTimer: ReturnType<typeof setInterval> | null = null;
 	collectionService: CollectionService | null = null;
 	storageService: StorageService | null = null;
 
@@ -130,9 +133,39 @@ class CollectionStore {
 		await this.refreshStorageInfo();
 	}
 
+	startDemoMode() {
+		if (this.isDemoMode) return;
+		this.stopCollecting();
+		this.stopPreviewing();
+
+		this.isDemoMode = true;
+		this.startedAt = Date.now();
+		this.lastError = null;
+		resetMockData();
+
+		// Generate mock data immediately and on interval
+		const tick = () => {
+			const locations = generateMockData();
+			busStore.updateBuses(locations, true);
+			this.recordsCollected += locations.length;
+			this.violationsDetected += locations.filter((l) => l.isViolation).length;
+		};
+		tick();
+		this.demoTimer = setInterval(tick, POLLING_INTERVAL_MS);
+	}
+
+	stopDemoMode() {
+		if (this.demoTimer) {
+			clearInterval(this.demoTimer);
+			this.demoTimer = null;
+		}
+		this.isDemoMode = false;
+	}
+
 	destroy() {
 		this.stopCollecting();
 		this.stopPreviewing();
+		this.stopDemoMode();
 	}
 }
 

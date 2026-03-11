@@ -50,7 +50,7 @@
 	let elapsedTimer: ReturnType<typeof setInterval> | null = null;
 
 	$effect(() => {
-		if (collectionStore.isCollecting) {
+		if (collectionStore.isCollecting || collectionStore.isDemoMode) {
 			elapsedTimer = setInterval(() => {
 				elapsedDisplay = formatElapsed(collectionStore.elapsedSeconds);
 			}, 1000);
@@ -76,6 +76,13 @@
 				>
 					Stop Collecting
 				</button>
+			{:else if collectionStore.isDemoMode}
+				<button
+					class="flex-1 py-2 rounded-xl bg-warning/15 text-warning border border-warning/20 text-xs font-medium hover:bg-warning/25 transition-all cursor-pointer"
+					onclick={() => collectionStore.stopDemoMode()}
+				>
+					Stop Demo
+				</button>
 			{:else}
 				<button
 					class="flex-1 py-2 rounded-xl bg-success/15 text-success border border-success/20 text-xs font-medium hover:bg-success/25 transition-all cursor-pointer"
@@ -85,7 +92,7 @@
 				</button>
 			{/if}
 
-			{#if !collectionStore.isCollecting}
+			{#if !collectionStore.isCollecting && !collectionStore.isDemoMode}
 				<button
 					class="py-2 px-3 rounded-xl text-xs font-medium transition-all cursor-pointer
 						{collectionStore.isPreviewing
@@ -99,11 +106,18 @@
 				>
 					{collectionStore.isPreviewing ? 'Stop Preview' : 'Preview'}
 				</button>
+				<button
+					class="py-2 px-3 rounded-xl text-xs font-medium transition-all cursor-pointer bg-warning/[0.08] text-warning/80 border border-warning/15 hover:bg-warning/15 hover:text-warning"
+					onclick={() => collectionStore.startDemoMode()}
+					title="Simulated bus data for testing"
+				>
+					Demo
+				</button>
 			{/if}
 		</div>
 
 		<!-- Collection Stats -->
-		{#if collectionStore.isCollecting}
+		{#if collectionStore.isCollecting || collectionStore.isDemoMode}
 			<div class="grid grid-cols-3 gap-2 mb-3">
 				<div class="bg-white/[0.02] rounded-lg px-2 py-1.5">
 					<div class="text-[10px] text-text-muted uppercase">Time</div>
