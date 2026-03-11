@@ -5,6 +5,7 @@
 	import ModeSwitcher from './ModeSwitcher.svelte';
 	import KpiCard from './KpiCard.svelte';
 	import RouteFilter from './RouteFilter.svelte';
+	import ComplianceRing from './ComplianceRing.svelte';
 </script>
 
 <div class="mx-3 mt-3 rounded-2xl glass-strong px-4 py-2.5 flex items-center gap-3 min-w-0 overflow-hidden">
@@ -67,6 +68,8 @@
 				icon="speed"
 			/>
 		</div>
+
+		<ComplianceRing />
 
 		<div class="w-px h-8 bg-white/5"></div>
 

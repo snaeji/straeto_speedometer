@@ -6,6 +6,7 @@
 	import Sidebar from './Sidebar.svelte';
 	import PlaybackBar from './PlaybackBar.svelte';
 	import SpeedGraph from './SpeedGraph.svelte';
+	import ViolationFlash from './ViolationFlash.svelte';
 </script>
 
 <div class="h-screen w-screen overflow-hidden bg-bg-primary relative">
@@ -57,6 +58,9 @@
 			<PlaybackBar />
 		</div>
 	{/if}
+
+	<!-- Violation screen flash -->
+	<ViolationFlash />
 
 	<!-- Keyboard shortcut hint -->
 	<div class="absolute right-4 z-[2] text-text-muted text-[10px] font-mono opacity-30 pointer-events-none select-none transition-all duration-300"

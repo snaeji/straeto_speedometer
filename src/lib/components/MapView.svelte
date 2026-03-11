@@ -8,13 +8,25 @@
 	let mapContainer: HTMLDivElement;
 	let map: maplibregl.Map | null = null;
 	let mapLoaded = $state(false);
-	let markers = new Map<string, { marker: maplibregl.Marker; element: HTMLDivElement }>();
+	let markers = new Map<string, {
+		marker: maplibregl.Marker;
+		element: HTMLDivElement;
+		// Animation state for smooth movement
+		fromLng: number;
+		fromLat: number;
+		toLng: number;
+		toLat: number;
+		animStart: number;
+		animDuration: number;
+	}>();
 	let resizeObserver: ResizeObserver | null = null;
+	let animFrameId: number | null = null;
 
 	// Track position history for bus trails
 	let busTrails = new Map<string, { lng: number; lat: number; ts: number }[]>();
 	const TRAIL_MAX_POINTS = 30;
 	const TRAIL_MAX_AGE_MS = 120_000; // 2 minutes
+	const MARKER_ANIM_DURATION = 1800; // ms — smooth glide between positions
 
 	onMount(() => {
 		map = new maplibregl.Map({
@@ -136,6 +148,8 @@
 			});
 		});
 
+		startAnimLoop();
+
 		map.on('click', (e: maplibregl.MapMouseEvent) => {
 			const target = e.originalEvent.target as HTMLElement;
 			if (!target.closest('.bus-marker')) {
@@ -153,7 +167,28 @@
 		resizeObserver.observe(mapContainer);
 	});
 
+	// Animation loop for smooth marker movement
+	function startAnimLoop() {
+		function tick() {
+			const now = performance.now();
+			for (const entry of markers.values()) {
+				if (entry.animStart <= 0) continue;
+				const elapsed = now - entry.animStart;
+				const t = Math.min(elapsed / entry.animDuration, 1);
+				// Ease-out cubic for natural deceleration
+				const ease = 1 - Math.pow(1 - t, 3);
+				const lng = entry.fromLng + (entry.toLng - entry.fromLng) * ease;
+				const lat = entry.fromLat + (entry.toLat - entry.fromLat) * ease;
+				entry.marker.setLngLat([lng, lat]);
+				if (t >= 1) entry.animStart = 0;
+			}
+			animFrameId = requestAnimationFrame(tick);
+		}
+		animFrameId = requestAnimationFrame(tick);
+	}
+
 	onDestroy(() => {
+		if (animFrameId) cancelAnimationFrame(animFrameId);
 		resizeObserver?.disconnect();
 		for (const { marker } of markers.values()) {
 			marker.remove();
@@ -201,7 +236,14 @@
 
 			const existing = markers.get(bus.busId);
 			if (existing) {
-				existing.marker.setLngLat([bus.lng, bus.lat]);
+				// Animate to new position (start from current interpolated position)
+				const curLngLat = existing.marker.getLngLat();
+				existing.fromLng = curLngLat.lng;
+				existing.fromLat = curLngLat.lat;
+				existing.toLng = bus.lng;
+				existing.toLat = bus.lat;
+				existing.animStart = performance.now();
+				existing.animDuration = MARKER_ANIM_DURATION;
 				updateMarkerElement(existing.element, bus.routeNr, color, status, isSelected, bus.speedKmh, bus.speedLimitKmh, bus.direction);
 			} else {
 				const el = createMarkerElement(bus.routeNr, color, status, isSelected, bus.busId, bus.speedKmh, bus.speedLimitKmh, bus.direction);
@@ -209,7 +251,16 @@
 					.setLngLat([bus.lng, bus.lat])
 					.addTo(map!);
 
-				markers.set(bus.busId, { marker, element: el });
+				markers.set(bus.busId, {
+					marker,
+					element: el,
+					fromLng: bus.lng,
+					fromLat: bus.lat,
+					toLng: bus.lng,
+					toLat: bus.lat,
+					animStart: 0,
+					animDuration: MARKER_ANIM_DURATION,
+				});
 			}
 		}
 
