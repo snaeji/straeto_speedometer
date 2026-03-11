@@ -4,6 +4,7 @@
 	import { busStore, getBusStatus, getStatusColor } from '$lib/stores/buses.svelte';
 	import { appStore } from '$lib/stores/app.svelte';
 	import { MAP_CENTER, MAP_ZOOM } from '$lib/utils/constants';
+	import { DEMO_ROUTES } from '$lib/services/mock-data';
 
 	let mapContainer: HTMLDivElement;
 	let map: maplibregl.Map | null = null;
@@ -126,8 +127,48 @@
 				source: 'bus-trails',
 				paint: {
 					'line-color': ['get', 'color'],
-					'line-width': 2.5,
+					'line-width': 3,
 					'line-opacity': ['get', 'opacity'],
+				},
+				layout: {
+					'line-cap': 'round',
+					'line-join': 'round',
+				},
+			});
+
+			// Route path for selected bus
+			map.addSource('route-path', {
+				type: 'geojson',
+				data: { type: 'FeatureCollection', features: [] },
+			});
+
+			// Glow outline behind the route
+			map.addLayer({
+				id: 'route-path-glow',
+				type: 'line',
+				source: 'route-path',
+				paint: {
+					'line-color': '#06b6d4',
+					'line-width': 12,
+					'line-opacity': 0.15,
+					'line-blur': 6,
+				},
+				layout: {
+					'line-cap': 'round',
+					'line-join': 'round',
+				},
+			});
+
+			// Main dashed route line
+			map.addLayer({
+				id: 'route-path-line',
+				type: 'line',
+				source: 'route-path',
+				paint: {
+					'line-color': '#06b6d4',
+					'line-width': 3,
+					'line-opacity': 0.7,
+					'line-dasharray': [3, 2],
 				},
 				layout: {
 					'line-cap': 'round',
@@ -344,6 +385,35 @@
 			})),
 		];
 		source.setData({ type: 'FeatureCollection', features: allPoints });
+	});
+
+	// Show route path when a bus is selected
+	$effect(() => {
+		if (!map || !mapLoaded) return;
+		const source = map.getSource('route-path') as maplibregl.GeoJSONSource | undefined;
+		if (!source) return;
+
+		const selected = busStore.selectedBus;
+		if (!selected) {
+			source.setData({ type: 'FeatureCollection', features: [] });
+			return;
+		}
+
+		const route = DEMO_ROUTES.find((r: typeof DEMO_ROUTES[0]) => r.routeNr === selected.routeNr);
+		if (!route || route.waypoints.length < 2) {
+			source.setData({ type: 'FeatureCollection', features: [] });
+			return;
+		}
+
+		const coordinates = route.waypoints.map((wp: { lat: number; lng: number }) => [wp.lng, wp.lat]);
+		source.setData({
+			type: 'FeatureCollection',
+			features: [{
+				type: 'Feature',
+				geometry: { type: 'LineString', coordinates },
+				properties: {},
+			}],
+		});
 	});
 
 	function updateTrailLines(buses: typeof busStore.activeBuses) {

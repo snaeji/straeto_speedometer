@@ -1,7 +1,7 @@
 import type { BusLocation } from '$lib/types/bus';
 
 // Realistic Reykjavik bus routes with actual road coordinates
-const ROUTES = [
+export const DEMO_ROUTES = [
 	{
 		routeNr: '1',
 		headsign: 'Hlemmur',
@@ -136,8 +136,8 @@ function initMockBuses() {
 	// Create 15-25 buses spread across routes
 	const busCount = 18 + Math.floor(Math.random() * 8);
 	for (let i = 0; i < busCount; i++) {
-		const routeIdx = Math.floor(Math.random() * ROUTES.length);
-		const route = ROUTES[routeIdx];
+		const routeIdx = Math.floor(Math.random() * DEMO_ROUTES.length);
+		const route = DEMO_ROUTES[routeIdx];
 		const busLetter = String.fromCharCode(65 + (i % 4)); // A, B, C, D
 		mockBuses.push({
 			busId: `${route.routeNr}-${busLetter}`,
@@ -156,7 +156,7 @@ function lerp(a: number, b: number, t: number): number {
 	return a + (b - a) * t;
 }
 
-function getPositionOnRoute(route: typeof ROUTES[0], progress: number): { lat: number; lng: number; direction: number } {
+function getPositionOnRoute(route: typeof DEMO_ROUTES[0], progress: number): { lat: number; lng: number; direction: number } {
 	const waypoints = route.waypoints;
 	const totalSegments = waypoints.length - 1;
 	const segmentFloat = progress * totalSegments;
@@ -188,7 +188,7 @@ export function generateMockData(): BusLocation[] {
 	const locations: BusLocation[] = [];
 
 	for (const bus of mockBuses) {
-		const route = ROUTES[bus.routeIdx];
+		const route = DEMO_ROUTES[bus.routeIdx];
 
 		// Update speed with some variance
 		if (Math.random() < 0.15) {
