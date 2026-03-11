@@ -20,13 +20,15 @@
 		grid: { left: 48, right: 16, top: 24, bottom: 32, containLabel: false },
 	};
 
+	let lastComputedLength = 0;
+	const hasData = $derived(statsStore.totalRecords > 0);
+
 	onMount(async () => {
+		// Chart containers are always in DOM now, so init immediately
 		routeChart = echarts.init(routeChartEl, undefined, { renderer: 'canvas' });
 		hourlyChart = echarts.init(hourlyChartEl, undefined, { renderer: 'canvas' });
 		speedChart = echarts.init(speedChartEl, undefined, { renderer: 'canvas' });
 		distChart = echarts.init(distChartEl, undefined, { renderer: 'canvas' });
-
-		await statsStore.computeStats();
 
 		const ro = new ResizeObserver(() => {
 			routeChart?.resize();
@@ -38,6 +40,17 @@
 		ro.observe(hourlyChartEl);
 		ro.observe(speedChartEl);
 		ro.observe(distChartEl);
+
+		await statsStore.computeStats();
+	});
+
+	// Reactively recompute stats when liveHistory grows
+	$effect(() => {
+		const len = busStore.liveHistory.length;
+		if (len > 0 && len - lastComputedLength >= 50) {
+			lastComputedLength = len;
+			statsStore.computeStats();
+		}
 	});
 
 	onDestroy(() => {
@@ -250,58 +263,58 @@
 				Computing statistics...
 			</div>
 		</div>
-	{:else if statsStore.totalRecords === 0}
+	{:else if !hasData}
 		<div class="flex flex-col items-center justify-center py-12 px-4">
 			<p class="text-xs text-text-muted text-center">No data available</p>
 			<p class="text-[10px] text-text-muted/60 text-center mt-1">Collect or import data first</p>
 		</div>
-	{:else}
-		<!-- Top Speeders -->
-		{#if statsStore.topSpeeders.length > 0}
-			<div class="px-4 pt-4 pb-2">
-				<h3 class="text-xs font-medium text-text-secondary mb-2">Top Speeders</h3>
-				<div class="rounded-xl border border-white/[0.04] overflow-hidden">
-					<div class="grid grid-cols-[1fr_auto_auto_auto] gap-x-3 px-3 py-1.5 bg-white/[0.02] border-b border-white/[0.04]">
-						<span class="text-[9px] text-text-muted uppercase tracking-wider">Bus ID</span>
-						<span class="text-[9px] text-text-muted uppercase tracking-wider">Route</span>
-						<span class="text-[9px] text-text-muted uppercase tracking-wider text-right">Max Spd</span>
-						<span class="text-[9px] text-text-muted uppercase tracking-wider text-right">Viol.</span>
-					</div>
-					{#each statsStore.topSpeeders as speeder, i}
-						<div class="grid grid-cols-[1fr_auto_auto_auto] gap-x-3 items-center px-3 py-1.5
-							{i % 2 === 0 ? 'bg-white/[0.01]' : 'bg-white/[0.03]'}
-							{i < statsStore.topSpeeders.length - 1 ? 'border-b border-white/[0.03]' : ''}">
-							<span class="text-[11px] font-mono text-text-primary truncate">{speeder.busId}</span>
-							<span class="inline-flex items-center justify-center min-w-[28px] h-5 rounded-md px-1.5 text-[10px] font-bold text-white bg-accent/70">{speeder.routeNr}</span>
-							<span class="text-[11px] font-mono tabular-nums text-text-secondary text-right">{speeder.maxSpeed}</span>
-							<span class="text-[11px] font-mono tabular-nums text-danger text-right font-medium">{speeder.violations}</span>
-						</div>
-					{/each}
+	{/if}
+
+	<!-- Top Speeders (only shown when data available) -->
+	{#if hasData && statsStore.topSpeeders.length > 0}
+		<div class="px-4 pt-4 pb-2">
+			<h3 class="text-xs font-medium text-text-secondary mb-2">Top Speeders</h3>
+			<div class="rounded-xl border border-white/[0.04] overflow-hidden">
+				<div class="grid grid-cols-[1fr_auto_auto_auto] gap-x-3 px-3 py-1.5 bg-white/[0.02] border-b border-white/[0.04]">
+					<span class="text-[9px] text-text-muted uppercase tracking-wider">Bus ID</span>
+					<span class="text-[9px] text-text-muted uppercase tracking-wider">Route</span>
+					<span class="text-[9px] text-text-muted uppercase tracking-wider text-right">Max Spd</span>
+					<span class="text-[9px] text-text-muted uppercase tracking-wider text-right">Viol.</span>
 				</div>
-			</div>
-		{/if}
-
-		<!-- Charts -->
-		<div class="p-4 space-y-4">
-			<div>
-				<h3 class="text-xs font-medium text-text-secondary mb-2">Violations by Route (Top 10)</h3>
-				<div bind:this={routeChartEl} class="w-full h-44 rounded-xl bg-white/[0.01]"></div>
-			</div>
-
-			<div>
-				<h3 class="text-xs font-medium text-text-secondary mb-2">Violations by Hour</h3>
-				<div bind:this={hourlyChartEl} class="w-full h-44 rounded-xl bg-white/[0.01]"></div>
-			</div>
-
-			<div>
-				<h3 class="text-xs font-medium text-text-secondary mb-2">Average Speed by Route</h3>
-				<div bind:this={speedChartEl} class="w-full h-48 rounded-xl bg-white/[0.01]"></div>
-			</div>
-
-			<div>
-				<h3 class="text-xs font-medium text-text-secondary mb-2">Speed Distribution</h3>
-				<div bind:this={distChartEl} class="w-full h-44 rounded-xl bg-white/[0.01]"></div>
+				{#each statsStore.topSpeeders as speeder, i}
+					<div class="grid grid-cols-[1fr_auto_auto_auto] gap-x-3 items-center px-3 py-1.5
+						{i % 2 === 0 ? 'bg-white/[0.01]' : 'bg-white/[0.03]'}
+						{i < statsStore.topSpeeders.length - 1 ? 'border-b border-white/[0.03]' : ''}">
+						<span class="text-[11px] font-mono text-text-primary truncate">{speeder.busId}</span>
+						<span class="inline-flex items-center justify-center min-w-[28px] h-5 rounded-md px-1.5 text-[10px] font-bold text-white bg-accent/70">{speeder.routeNr}</span>
+						<span class="text-[11px] font-mono tabular-nums text-text-secondary text-right">{speeder.maxSpeed}</span>
+						<span class="text-[11px] font-mono tabular-nums text-danger text-right font-medium">{speeder.violations}</span>
+					</div>
+				{/each}
 			</div>
 		</div>
 	{/if}
+
+	<!-- Charts — always in DOM so echarts.init works in onMount -->
+	<div class="p-4 space-y-4" class:hidden={!hasData}>
+		<div>
+			<h3 class="text-xs font-medium text-text-secondary mb-2">Violations by Route (Top 10)</h3>
+			<div bind:this={routeChartEl} class="w-full h-44 rounded-xl bg-white/[0.01]"></div>
+		</div>
+
+		<div>
+			<h3 class="text-xs font-medium text-text-secondary mb-2">Violations by Hour</h3>
+			<div bind:this={hourlyChartEl} class="w-full h-44 rounded-xl bg-white/[0.01]"></div>
+		</div>
+
+		<div>
+			<h3 class="text-xs font-medium text-text-secondary mb-2">Average Speed by Route</h3>
+			<div bind:this={speedChartEl} class="w-full h-48 rounded-xl bg-white/[0.01]"></div>
+		</div>
+
+		<div>
+			<h3 class="text-xs font-medium text-text-secondary mb-2">Speed Distribution</h3>
+			<div bind:this={distChartEl} class="w-full h-44 rounded-xl bg-white/[0.01]"></div>
+		</div>
+	</div>
 </div>

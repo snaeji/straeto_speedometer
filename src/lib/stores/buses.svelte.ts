@@ -35,7 +35,7 @@ class BusStore {
 	autoFollow = $state(true);
 
 	/** In-memory history of all bus locations for live stats */
-	liveHistory: BusLocation[] = [];
+	liveHistory = $state<BusLocation[]>([]);
 
 	/** Callbacks when a bus goes stale (for speed calculator reset) */
 	private onBusStaleCallbacks: ((busId: string) => void)[] = [];
