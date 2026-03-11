@@ -23,6 +23,11 @@ class CollectionStore {
 	collectionService: CollectionService | null = null;
 	storageService: StorageService | null = null;
 
+	/** Expose Kalman calculator for MapView animation */
+	get speedCalculator() {
+		return this.collectionService?.speedCalculator ?? null;
+	}
+
 	get elapsedSeconds(): number {
 		if (!this.startedAt) return 0;
 		return Math.floor((Date.now() - this.startedAt) / 1000);

@@ -3,6 +3,7 @@
 	import maplibregl from 'maplibre-gl';
 	import { busStore, getBusStatus, getStatusColor } from '$lib/stores/buses.svelte';
 	import { appStore } from '$lib/stores/app.svelte';
+	import { collectionStore } from '$lib/stores/collection.svelte';
 	import { MAP_CENTER, MAP_ZOOM } from '$lib/utils/constants';
 
 
@@ -12,13 +13,7 @@
 	let markers = new Map<string, {
 		marker: maplibregl.Marker;
 		element: HTMLDivElement;
-		// Animation state for smooth movement
-		fromLng: number;
-		fromLat: number;
-		toLng: number;
-		toLat: number;
-		animStart: number;
-		animDuration: number;
+		busId: string;
 	}>();
 	let resizeObserver: ResizeObserver | null = null;
 	let animFrameId: number | null = null;
@@ -27,7 +22,6 @@
 	let busTrails = new Map<string, { lng: number; lat: number; ts: number }[]>();
 	const TRAIL_MAX_POINTS = 30;
 	const TRAIL_MAX_AGE_MS = 120_000; // 2 minutes
-	const MARKER_ANIM_DURATION = 1800; // ms — smooth glide between positions
 
 	// Track known violators to detect NEW violations for shockwave
 	let knownViolators = new Set<string>();
@@ -226,20 +220,20 @@
 		resizeObserver.observe(mapContainer);
 	});
 
-	// Animation loop for smooth marker movement
+	// Animation loop: Kalman-predicted positions at 60fps
 	function startAnimLoop() {
 		function tick() {
-			const now = performance.now();
+			const now = Date.now();
+			const calc = collectionStore.speedCalculator;
 			for (const entry of markers.values()) {
-				if (entry.animStart <= 0) continue;
-				const elapsed = now - entry.animStart;
-				const t = Math.min(elapsed / entry.animDuration, 1);
-				// Ease-out cubic for natural deceleration
-				const ease = 1 - Math.pow(1 - t, 3);
-				const lng = entry.fromLng + (entry.toLng - entry.fromLng) * ease;
-				const lat = entry.fromLat + (entry.toLat - entry.fromLat) * ease;
-				entry.marker.setLngLat([lng, lat]);
-				if (t >= 1) entry.animStart = 0;
+				if (calc) {
+					const pred = calc.getPredictedPosition(entry.busId, now);
+					if (pred) {
+						entry.marker.setLngLat([pred.lng, pred.lat]);
+						continue;
+					}
+				}
+				// Fallback: position already set from bus store data
 			}
 			animFrameId = requestAnimationFrame(tick);
 		}
@@ -295,30 +289,32 @@
 
 			const existing = markers.get(bus.busId);
 			if (existing) {
-				// Animate to new position (start from current interpolated position)
-				const curLngLat = existing.marker.getLngLat();
-				existing.fromLng = curLngLat.lng;
-				existing.fromLat = curLngLat.lat;
-				existing.toLng = bus.lng;
-				existing.toLat = bus.lat;
-				existing.animStart = performance.now();
-				existing.animDuration = MARKER_ANIM_DURATION;
+				// Update visual element (color, speed badge, etc.)
+				// Position is handled by the Kalman animation loop
 				updateMarkerElement(existing.element, bus.routeNr, color, status, isSelected, bus.speedKmh, bus.speedLimitKmh, bus.direction);
 			} else {
 				const el = createMarkerElement(bus.routeNr, color, status, isSelected, bus.busId, bus.speedKmh, bus.speedLimitKmh, bus.direction);
+
+				// Use Kalman-predicted position if available, else raw GPS
+				let initLng = bus.lng;
+				let initLat = bus.lat;
+				const calc = collectionStore.speedCalculator;
+				if (calc) {
+					const pred = calc.getPredictedPosition(bus.busId, Date.now());
+					if (pred) {
+						initLng = pred.lng;
+						initLat = pred.lat;
+					}
+				}
+
 				const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
-					.setLngLat([bus.lng, bus.lat])
+					.setLngLat([initLng, initLat])
 					.addTo(map!);
 
 				markers.set(bus.busId, {
 					marker,
 					element: el,
-					fromLng: bus.lng,
-					fromLat: bus.lat,
-					toLng: bus.lng,
-					toLat: bus.lat,
-					animStart: 0,
-					animDuration: MARKER_ANIM_DURATION,
+					busId: bus.busId,
 				});
 			}
 		}

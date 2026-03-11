@@ -45,5 +45,14 @@ export const VIOLATION_APPROACHING_RATIO = 0.8; // 80% of limit = approaching
 export const MAP_CENTER: [number, number] = [-21.9, 64.135];
 export const MAP_ZOOM = 12;
 
+// Kalman filter parameters
+export const KALMAN_SIGMA_A = 0.8; // Process noise: acceleration std dev (m/s²)
+export const KALMAN_SIGMA_GPS = 5.0; // Measurement noise: GPS position sigma (m)
+export const KALMAN_MIN_FIXES_FOR_PREDICTION = 3; // Warm-up fixes before reporting speed
+export const KALMAN_PREDICTION_CAP_S = 5.0; // Max extrapolation time (seconds)
+export const KALMAN_PREDICTION_DECAY_S = 2.0; // Velocity decay window after cap
+export const KALMAN_BLEND_DURATION_MS = 400; // Correction blend window (ms)
+export const KALMAN_ENDPOINT_BUFFER_SIZE = 6; // Position buffer for endpoint speed bound
+
 // Route colors for consistent coloring
 export const ROUTE_COLORS: Record<string, string> = {};

@@ -1,10 +1,10 @@
 import { fetchBusLocations } from './straeto-api';
-import { SpeedCalculator } from './speed-calculator';
+import { KalmanSpeedCalculator } from './kalman-speed-calculator';
 import { SpeedLimitService } from './speed-limit-service';
 import { copyBusLocationWith, type BusLocation } from '$lib/types/bus';
 
 export class CollectionService {
-	private speedCalculator = new SpeedCalculator();
+	readonly speedCalculator = new KalmanSpeedCalculator();
 	private lastUpdateByBus = new Map<string, number>();
 
 	constructor(private speedLimitService: SpeedLimitService) {}
