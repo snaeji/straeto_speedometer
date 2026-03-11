@@ -28,3 +28,5 @@ collector/pubspec.lock
 node_modules/
 build/
 .svelte-kit/
+scripts/.browser-ws
+scripts/.chrome-profile
