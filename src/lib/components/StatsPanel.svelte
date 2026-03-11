@@ -7,9 +7,11 @@
 	let routeChartEl: HTMLDivElement;
 	let hourlyChartEl: HTMLDivElement;
 	let speedChartEl: HTMLDivElement;
+	let distChartEl: HTMLDivElement;
 	let routeChart: echarts.ECharts | null = null;
 	let hourlyChart: echarts.ECharts | null = null;
 	let speedChart: echarts.ECharts | null = null;
+	let distChart: echarts.ECharts | null = null;
 
 	const chartTheme = {
 		backgroundColor: 'transparent',
@@ -21,6 +23,7 @@
 		routeChart = echarts.init(routeChartEl, undefined, { renderer: 'canvas' });
 		hourlyChart = echarts.init(hourlyChartEl, undefined, { renderer: 'canvas' });
 		speedChart = echarts.init(speedChartEl, undefined, { renderer: 'canvas' });
+		distChart = echarts.init(distChartEl, undefined, { renderer: 'canvas' });
 
 		await statsStore.computeStats();
 
@@ -28,16 +31,19 @@
 			routeChart?.resize();
 			hourlyChart?.resize();
 			speedChart?.resize();
+			distChart?.resize();
 		});
 		ro.observe(routeChartEl);
 		ro.observe(hourlyChartEl);
 		ro.observe(speedChartEl);
+		ro.observe(distChartEl);
 	});
 
 	onDestroy(() => {
 		routeChart?.dispose();
 		hourlyChart?.dispose();
 		speedChart?.dispose();
+		distChart?.dispose();
 	});
 
 	// Update route violations chart
@@ -166,6 +172,49 @@
 			animationDelay: 400,
 		});
 	});
+
+	// Update speed distribution chart
+	$effect(() => {
+		if (!distChart || statsStore.speedDistribution.length === 0) return;
+		distChart.setOption({
+			...chartTheme,
+			tooltip: {
+				trigger: 'axis',
+				backgroundColor: 'rgba(8, 14, 30, 0.9)',
+				borderColor: 'rgba(255,255,255,0.1)',
+				textStyle: { color: '#f1f5f9', fontSize: 11 },
+				formatter: (params: {value: number; name: string}[]) => {
+					const p = Array.isArray(params) ? params[0] : params;
+					return `${p.name} km/h — ${p.value.toLocaleString()} records`;
+				},
+			},
+			xAxis: {
+				type: 'category',
+				data: statsStore.speedDistribution.map((b) => b.range),
+				axisLine: { lineStyle: { color: 'rgba(255,255,255,0.06)' } },
+				axisLabel: { color: '#64748b', fontSize: 9 },
+			},
+			yAxis: {
+				type: 'value',
+				splitLine: { lineStyle: { color: 'rgba(255,255,255,0.04)' } },
+				axisLabel: { color: '#64748b', fontSize: 10 },
+			},
+			series: [{
+				type: 'bar',
+				data: statsStore.speedDistribution.map((b) => b.count),
+				barWidth: '60%',
+				itemStyle: {
+					borderRadius: [3, 3, 0, 0],
+					color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+						{ offset: 0, color: '#06b6d4' },
+						{ offset: 1, color: '#d97706' },
+					]),
+				},
+			}],
+			animationDuration: 600,
+			animationDelay: 600,
+		});
+	});
 </script>
 
 <div class="flex flex-col h-full overflow-y-auto">
@@ -206,6 +255,31 @@
 			<p class="text-[10px] text-text-muted/60 text-center mt-1">Collect or import data first</p>
 		</div>
 	{:else}
+		<!-- Top Speeders -->
+		{#if statsStore.topSpeeders.length > 0}
+			<div class="px-4 pt-4 pb-2">
+				<h3 class="text-xs font-medium text-text-secondary mb-2">Top Speeders</h3>
+				<div class="rounded-xl border border-white/[0.04] overflow-hidden">
+					<div class="grid grid-cols-[1fr_auto_auto_auto] gap-x-3 px-3 py-1.5 bg-white/[0.02] border-b border-white/[0.04]">
+						<span class="text-[9px] text-text-muted uppercase tracking-wider">Bus ID</span>
+						<span class="text-[9px] text-text-muted uppercase tracking-wider">Route</span>
+						<span class="text-[9px] text-text-muted uppercase tracking-wider text-right">Max Spd</span>
+						<span class="text-[9px] text-text-muted uppercase tracking-wider text-right">Viol.</span>
+					</div>
+					{#each statsStore.topSpeeders as speeder, i}
+						<div class="grid grid-cols-[1fr_auto_auto_auto] gap-x-3 items-center px-3 py-1.5
+							{i % 2 === 0 ? 'bg-white/[0.01]' : 'bg-white/[0.03]'}
+							{i < statsStore.topSpeeders.length - 1 ? 'border-b border-white/[0.03]' : ''}">
+							<span class="text-[11px] font-mono text-text-primary truncate">{speeder.busId}</span>
+							<span class="inline-flex items-center justify-center min-w-[28px] h-5 rounded-md px-1.5 text-[10px] font-bold text-white bg-accent/70">{speeder.routeNr}</span>
+							<span class="text-[11px] font-mono tabular-nums text-text-secondary text-right">{speeder.maxSpeed}</span>
+							<span class="text-[11px] font-mono tabular-nums text-danger text-right font-medium">{speeder.violations}</span>
+						</div>
+					{/each}
+				</div>
+			</div>
+		{/if}
+
 		<!-- Charts -->
 		<div class="p-4 space-y-4">
 			<div>
@@ -221,6 +295,11 @@
 			<div>
 				<h3 class="text-xs font-medium text-text-secondary mb-2">Average Speed by Route</h3>
 				<div bind:this={speedChartEl} class="w-full h-48 rounded-xl bg-white/[0.01]"></div>
+			</div>
+
+			<div>
+				<h3 class="text-xs font-medium text-text-secondary mb-2">Speed Distribution</h3>
+				<div bind:this={distChartEl} class="w-full h-44 rounded-xl bg-white/[0.01]"></div>
 			</div>
 		</div>
 	{/if}

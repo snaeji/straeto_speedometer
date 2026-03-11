@@ -20,11 +20,17 @@ export interface TopSpeeder {
 	violations: number;
 }
 
+export interface SpeedBucket {
+	range: string;
+	count: number;
+}
+
 class StatsStore {
 	isComputing = $state(false);
 	topSpeeders = $state<TopSpeeder[]>([]);
 	routeStats = $state<RouteStats[]>([]);
 	violationsByHour = $state<HourlyViolations[]>([]);
+	speedDistribution = $state<SpeedBucket[]>([]);
 	totalDistanceKm = $state(0);
 	totalBusesTracked = $state(0);
 	totalRecords = $state(0);
@@ -54,6 +60,7 @@ class StatsStore {
 		}>();
 
 		const hourlyViolations = new Array(24).fill(0);
+		const speedBuckets = new Array(10).fill(0); // 0, 1-10, 11-20, ..., 71-80, 81+
 		const uniqueBuses = new Set<string>();
 		let totalDist = 0;
 		let totalRecs = 0;
@@ -104,6 +111,32 @@ class StatsStore {
 				}
 				if (loc.isViolation) rStat.violations++;
 				routeAgg.set(loc.routeNr, rStat);
+
+				// Speed distribution buckets
+				if (loc.speedKmh != null) {
+					const speed = loc.speedKmh;
+					if (speed === 0) {
+						speedBuckets[0]++;
+					} else if (speed <= 10) {
+						speedBuckets[1]++;
+					} else if (speed <= 20) {
+						speedBuckets[2]++;
+					} else if (speed <= 30) {
+						speedBuckets[3]++;
+					} else if (speed <= 40) {
+						speedBuckets[4]++;
+					} else if (speed <= 50) {
+						speedBuckets[5]++;
+					} else if (speed <= 60) {
+						speedBuckets[6]++;
+					} else if (speed <= 70) {
+						speedBuckets[7]++;
+					} else if (speed <= 80) {
+						speedBuckets[8]++;
+					} else {
+						speedBuckets[9]++;
+					}
+				}
 			}
 		}
 
@@ -131,6 +164,13 @@ class StatsStore {
 		// Hourly violations
 		this.violationsByHour = hourlyViolations.map((count, hour) => ({
 			hour,
+			count,
+		}));
+
+		// Speed distribution
+		const bucketLabels = ['0', '1-10', '11-20', '21-30', '31-40', '41-50', '51-60', '61-70', '71-80', '81+'];
+		this.speedDistribution = speedBuckets.map((count, i) => ({
+			range: bucketLabels[i],
 			count,
 		}));
 

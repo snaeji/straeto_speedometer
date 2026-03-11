@@ -40,7 +40,7 @@
 			zoom: MAP_ZOOM,
 			maxZoom: 18,
 			minZoom: 10,
-			attributionControl: true,
+			attributionControl: {},
 		});
 
 		map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
@@ -277,7 +277,6 @@
 		}
 
 		el.innerHTML = html;
-		el.style.position = 'relative';
 		el.style.zIndex = isSelected ? '10' : status === 'violation' ? '5' : '1';
 	}
 </script>

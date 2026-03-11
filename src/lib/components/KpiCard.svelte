@@ -23,8 +23,8 @@
 <div
 	class="flex items-center gap-2 px-3 py-1.5 rounded-xl border transition-all duration-200
 		{variant === 'danger' && value > 0
-			? 'bg-danger/[0.08] border-danger/20 glow-danger'
-			: 'bg-white/[0.02] border-white/[0.06] hover:border-white/[0.1]'}"
+			? 'bg-gradient-to-br from-danger/[0.12] to-danger/[0.04] border-danger/20 glow-danger'
+			: 'bg-gradient-to-br from-white/[0.04] to-white/[0.01] border-white/[0.06] hover:border-white/[0.1]'}"
 >
 	<svg
 		width="14"
@@ -38,8 +38,8 @@
 	<div class="flex flex-col">
 		<span class="text-[10px] uppercase tracking-wider text-text-muted leading-none">{label}</span>
 		<div class="flex items-baseline gap-0.5">
-			<span class="text-sm font-semibold font-mono tabular-nums leading-tight
-				{variant === 'danger' && value > 0 ? 'text-danger' : 'text-text-primary'}">
+			<span class="text-base font-semibold font-mono tabular-nums leading-tight
+				{variant === 'danger' && value > 0 ? 'text-danger text-glow' : 'text-text-primary'}">
 				{value}
 			</span>
 			{#if unit}

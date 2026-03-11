@@ -42,6 +42,37 @@
 	box-shadow: 0 0 20px rgba(239, 68, 68, 0.15), 0 0 60px rgba(239, 68, 68, 0.05);
 }
 
+@utility glass-card {
+	background: rgba(15, 23, 42, 0.6);
+	backdrop-filter: blur(16px);
+	-webkit-backdrop-filter: blur(16px);
+	border: 1px solid rgba(255, 255, 255, 0.06);
+	border-radius: 12px;
+}
+
+@utility aurora-border {
+	position: relative;
+	border: none;
+}
+
+.aurora-border::before {
+	content: '';
+	position: absolute;
+	inset: 0;
+	border-radius: inherit;
+	padding: 1px;
+	background: linear-gradient(135deg, rgba(6, 182, 212, 0.3), rgba(16, 185, 129, 0.15), rgba(139, 92, 246, 0.1));
+	mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+	-webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+	mask-composite: exclude;
+	-webkit-mask-composite: xor;
+	pointer-events: none;
+}
+
+@utility text-glow {
+	text-shadow: 0 0 20px rgba(6, 182, 212, 0.3);
+}
+
 html, body {
 	margin: 0;
 	padding: 0;
