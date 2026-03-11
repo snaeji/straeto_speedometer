@@ -31,7 +31,7 @@
 					<path d="M12 6v6l4 2" />
 				</svg>
 			</div>
-			<span class="text-sm font-semibold tracking-wider text-text-primary">STRAETO</span>
+			<span class="text-sm font-semibold tracking-wider text-text-primary">THE STRAETO SPEEDOMETER</span>
 			{#if collectionStore.isCollecting || collectionStore.isPreviewing || collectionStore.isDemoMode}
 				<div class="relative flex items-center">
 					<div class="w-2 h-2 rounded-full bg-success"></div>

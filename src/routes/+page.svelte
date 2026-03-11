@@ -144,7 +144,7 @@
 					</svg>
 				</div>
 				<div class="flex flex-col">
-					<span class="text-xl font-bold tracking-[0.2em] text-text-primary">STRAETO</span>
+					<span class="text-xl font-bold tracking-[0.2em] text-text-primary">THE STRAETO</span>
 					<span class="text-[10px] tracking-[0.3em] text-text-muted font-medium uppercase">Speedometer</span>
 				</div>
 			</div>
