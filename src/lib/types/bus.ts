@@ -1,3 +1,12 @@
+export type SpeedLimitMatch = 'matched' | 'fallback';
+
+export interface SpeedLimitResult {
+	speedLimitKmh: number;
+	match: SpeedLimitMatch;
+	distanceM: number; // distance to nearest segment
+	roadName?: string;
+}
+
 export interface BusLocation {
 	busId: string;
 	routeNr: string;
@@ -9,6 +18,8 @@ export interface BusLocation {
 	headsign?: string;
 	speedKmh?: number;
 	speedLimitKmh?: number;
+	speedLimitMatch?: SpeedLimitMatch;
+	speedLimitRoad?: string;
 	isViolation: boolean;
 }
 
@@ -46,6 +57,8 @@ export function busLocationFromJsonLine(json: JsonLineRecord): BusLocation {
 		headsign: json.h ?? undefined,
 		speedKmh: json.s ?? undefined,
 		speedLimitKmh: json.sl ?? undefined,
+		speedLimitMatch: json.slm === 'm' ? 'matched' : json.slm === 'f' ? 'fallback' : undefined,
+		speedLimitRoad: json.slr ?? undefined,
 		isViolation: json.v ?? false,
 	};
 }
@@ -63,13 +76,15 @@ export function busLocationToJsonLine(loc: BusLocation): JsonLineRecord {
 	if (loc.headsign) record.h = loc.headsign;
 	if (loc.speedKmh != null) record.s = Math.round(loc.speedKmh * 10) / 10;
 	if (loc.speedLimitKmh != null) record.sl = Math.round(loc.speedLimitKmh);
+	if (loc.speedLimitMatch) record.slm = loc.speedLimitMatch === 'matched' ? 'm' : 'f';
+	if (loc.speedLimitRoad) record.slr = loc.speedLimitRoad;
 	if (loc.isViolation) record.v = true;
 	return record;
 }
 
 export function copyBusLocationWith(
 	loc: BusLocation,
-	overrides: { speedKmh?: number; speedLimitKmh?: number; isViolation?: boolean }
+	overrides: { speedKmh?: number; speedLimitKmh?: number; speedLimitMatch?: SpeedLimitMatch; speedLimitRoad?: string; isViolation?: boolean }
 ): BusLocation {
 	return { ...loc, ...overrides };
 }
@@ -95,6 +110,8 @@ export interface JsonLineRecord {
 	h?: string;
 	s?: number;
 	sl?: number;
+	slm?: 'm' | 'f'; // speed limit match: m=matched, f=fallback
+	slr?: string; // speed limit road name
 	v?: boolean;
 }
 

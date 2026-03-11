@@ -2,6 +2,7 @@ import { fetchBusLocations } from './straeto-api';
 import { KalmanSpeedCalculator } from './kalman-speed-calculator';
 import { SpeedLimitService } from './speed-limit-service';
 import { copyBusLocationWith, type BusLocation } from '$lib/types/bus';
+import { VIOLATION_GRACE_KMH } from '$lib/utils/constants';
 
 export class CollectionService {
 	readonly speedCalculator = new KalmanSpeedCalculator();
@@ -31,13 +32,15 @@ export class CollectionService {
 				if (!withSpeed) continue;
 
 				// Speed limit lookup
-				const speedLimit = this.speedLimitService.getSpeedLimit(bus.lat, bus.lng);
+				const limitResult = this.speedLimitService.getSpeedLimit(bus.lat, bus.lng);
 				const isViolation =
-					withSpeed.speedKmh != null && withSpeed.speedKmh > speedLimit + 5;
+					withSpeed.speedKmh != null && withSpeed.speedKmh > limitResult.speedLimitKmh + VIOLATION_GRACE_KMH;
 
 				processed.push(
 					copyBusLocationWith(withSpeed, {
-						speedLimitKmh: speedLimit,
+						speedLimitKmh: limitResult.speedLimitKmh,
+						speedLimitMatch: limitResult.match,
+						speedLimitRoad: limitResult.roadName,
 						isViolation,
 					})
 				);
@@ -55,12 +58,14 @@ export class CollectionService {
 		const withSpeed = this.speedCalculator.processFix(bus);
 		if (!withSpeed) return null;
 
-		const speedLimit = this.speedLimitService.getSpeedLimit(bus.lat, bus.lng);
+		const limitResult = this.speedLimitService.getSpeedLimit(bus.lat, bus.lng);
 		const isViolation =
-			withSpeed.speedKmh != null && withSpeed.speedKmh > speedLimit + 5;
+			withSpeed.speedKmh != null && withSpeed.speedKmh > limitResult.speedLimitKmh + VIOLATION_GRACE_KMH;
 
 		return copyBusLocationWith(withSpeed, {
-			speedLimitKmh: speedLimit,
+			speedLimitKmh: limitResult.speedLimitKmh,
+			speedLimitMatch: limitResult.match,
+			speedLimitRoad: limitResult.roadName,
 			isViolation,
 		});
 	}

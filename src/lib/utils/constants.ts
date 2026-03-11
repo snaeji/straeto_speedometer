@@ -31,6 +31,7 @@ export const CONSERVATIVE_SPEED_FACTOR = 0.95;
 // Speed limit matching
 export const DEFAULT_SPEED_LIMIT_KMH = 50.0;
 export const MAX_SPEED_LIMIT_SEARCH_DISTANCE_M = 50.0;
+export const VIOLATION_GRACE_KMH = 5.0;
 
 // Coordinate conversion at 64 N (Reykjavik)
 export const REYKJAVIK_LAT_DEG_TO_KM = 111.0;
