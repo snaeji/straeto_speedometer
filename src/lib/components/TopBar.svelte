@@ -17,7 +17,7 @@
 		>
 			<svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
 				{#if appStore.sidebarOpen}
-					<path d="M4 5h10M4 9h10M4 13h10" />
+					<path d="M4 4L14 14M14 4L4 14" />
 				{:else}
 					<path d="M4 5h10M4 9h10M4 13h10" />
 				{/if}

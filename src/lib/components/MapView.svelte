@@ -7,6 +7,7 @@
 
 	let mapContainer: HTMLDivElement;
 	let map: maplibregl.Map | null = null;
+	let mapLoaded = $state(false);
 	let markers = new Map<string, { marker: maplibregl.Marker; element: HTMLDivElement }>();
 	let resizeObserver: ResizeObserver | null = null;
 
@@ -42,11 +43,44 @@
 			attributionControl: true,
 		});
 
-		map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
+		map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
 
-		// Wait for map to load before adding heatmap source
+		// Wait for map to load before adding layers
 		map.on('load', () => {
 			if (!map) return;
+			mapLoaded = true;
+
+			// Add speed limit road overlay (before heatmap so heatmap renders on top)
+			if (appStore.speedLimitGeoJson) {
+				map.addSource('speed-limits', {
+					type: 'geojson',
+					data: appStore.speedLimitGeoJson as GeoJSON.FeatureCollection,
+				});
+
+				map.addLayer({
+					id: 'speed-limit-lines',
+					type: 'line',
+					source: 'speed-limits',
+					paint: {
+						'line-color': [
+							'match',
+							['get', 'HRADI'],
+							30, 'rgba(16, 185, 129, 0.15)',
+							50, 'rgba(6, 182, 212, 0.15)',
+							70, 'rgba(245, 158, 11, 0.15)',
+							80, 'rgba(245, 158, 11, 0.15)',
+							90, 'rgba(245, 158, 11, 0.15)',
+							'rgba(255, 255, 255, 0.05)',
+						],
+						'line-width': 2,
+					},
+					layout: {
+						'line-cap': 'round',
+					},
+				});
+			}
+
+			// Add heatmap source and layer
 			map.addSource('heatmap-data', {
 				type: 'geojson',
 				data: { type: 'FeatureCollection', features: [] },
@@ -156,7 +190,7 @@
 
 	// Toggle heatmap layer visibility
 	$effect(() => {
-		if (!map || !map.getLayer('heatmap-layer')) return;
+		if (!map || !mapLoaded) return;
 		map.setLayoutProperty(
 			'heatmap-layer',
 			'visibility',
@@ -166,7 +200,7 @@
 
 	// Update heatmap data
 	$effect(() => {
-		if (!map || appStore.mode !== 'heatmap') return;
+		if (!map || !mapLoaded || appStore.mode !== 'heatmap') return;
 		const source = map.getSource('heatmap-data') as maplibregl.GeoJSONSource | undefined;
 		if (!source) return;
 

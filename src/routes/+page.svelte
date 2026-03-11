@@ -27,6 +27,7 @@
 			if (!response.ok) throw new Error('Failed to load speed_limits.geojson');
 			const geoJson = await response.json();
 			speedLimitService.loadFromGeoJson(geoJson);
+			appStore.speedLimitGeoJson = geoJson;
 			appStore.speedLimitsLoaded = true;
 			loadingProgress = 50;
 

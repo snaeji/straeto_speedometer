@@ -6,6 +6,15 @@
 	const speeds: PlaybackSpeed[] = [1, 2, 5, 10];
 </script>
 
+{#if !playbackStore.hasData}
+<div class="glass-strong rounded-2xl px-5 py-3 flex items-center justify-center gap-3">
+	<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" class="text-text-muted" stroke-width="1.5">
+		<circle cx="12" cy="12" r="10" />
+		<path d="M12 8v4M12 16h.01" />
+	</svg>
+	<span class="text-xs text-text-secondary">No recorded data. Collect or import data to use playback.</span>
+</div>
+{:else}
 <div class="glass-strong rounded-2xl px-5 py-3 flex items-center gap-4">
 	<!-- Transport controls -->
 	<div class="flex items-center gap-1 shrink-0">
@@ -91,6 +100,7 @@
 		</div>
 	</div>
 </div>
+{/if}
 
 <style>
 	input[type='range']::-webkit-slider-thumb {

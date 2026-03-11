@@ -1,32 +1,30 @@
-# Straeto Speedometer
+# Straeto Speedometer v2
 
-Real-time bus speed monitoring system for Reykjavík's public bus system (Straeto). Tracks GPS positions, calculates speeds, compares against official speed limits, and visualizes everything on an interactive map.
+Real-time bus speed monitoring dashboard for Reykjavik's Straeto buses. Tracks GPS positions, calculates speeds, compares against official speed limits, and visualizes everything on an interactive map.
 
-## Project Structure
+## Tech Stack
 
-```
-├── shared/       Pure Dart library — models, API client, speed calculation, speed limits
-├── app/          Flutter web app — map visualization, live collection, playback, stats
-├── collector/    Dart CLI — long-running data collection to JSONL files
-└── tools/        Utility scripts (speed limit data download)
-```
+- **Framework**: SvelteKit 5 (TypeScript)
+- **Map**: MapLibre GL JS
+- **Styling**: TailwindCSS 4
+- **Charts**: Apache ECharts
 
 ## Quick Start
 
-**Run the web app:**
 ```bash
-./start_app.sh
+npm install
+npm run dev
 ```
 
-**Run the standalone data collector:**
-```bash
-./start_collector.sh
-```
+The dev server starts at [http://localhost:5173](http://localhost:5173).
 
-**Download speed limit data** (needed before first build):
-```bash
-dart run tools/download_speed_limits.dart
-```
+## Scripts
+
+| Command | Description |
+|---|---|
+| `npm run dev` | Start development server |
+| `npm run build` | Build for production |
+| `npm run preview` | Preview production build |
 
 ## Live Demo
 
