@@ -37,11 +37,11 @@
 		<Sidebar />
 	</div>
 
-	<!-- Speed Graph (floating glass, bottom) -->
+	<!-- Bus Detail Panel (floating glass, right side) -->
 	{#if busStore.selectedBusId}
 		<div
 			class="absolute right-3 z-10 transition-all duration-300"
-			style="left: {appStore.sidebarOpen ? (appStore.mode === 'stats' ? '440px' : '340px') : '12px'};
+			style="top: 68px;
 				bottom: {appStore.mode === 'playback' ? '88px' : '12px'};
 				transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1)"
 		>
