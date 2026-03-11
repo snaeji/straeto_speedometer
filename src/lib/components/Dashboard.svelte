@@ -12,6 +12,16 @@
 	<!-- Map (always full background) -->
 	<MapView />
 
+	<!-- Vignette overlay for depth -->
+	<div class="absolute inset-0 pointer-events-none z-[1]"
+		style="background: radial-gradient(ellipse at center, transparent 40%, rgba(3, 7, 18, 0.4) 100%)"
+	></div>
+
+	<!-- Top edge shadow -->
+	<div class="absolute top-0 left-0 right-0 h-24 pointer-events-none z-[1]"
+		style="background: linear-gradient(180deg, rgba(3, 7, 18, 0.5) 0%, transparent 100%)"
+	></div>
+
 	<!-- Top Bar (floating glass) -->
 	<div class="absolute top-0 left-0 right-0 z-20">
 		<TopBar />
@@ -19,19 +29,20 @@
 
 	<!-- Sidebar (floating glass, sliding) -->
 	<div
-		class="absolute top-16 left-3 bottom-3 z-10 transition-all duration-300"
-		style="transform: translateX({appStore.sidebarOpen ? '0' : '-110%'}); width: {appStore.mode === 'stats' ? '420px' : '320px'}"
+		class="absolute left-3 bottom-3 z-10 transition-all duration-300"
+		style="top: 68px; transform: translateX({appStore.sidebarOpen ? '0' : 'calc(-100% - 24px)'}); width: {appStore.mode === 'stats' ? '420px' : '320px'}"
 		style:transition-timing-function="cubic-bezier(0.16, 1, 0.3, 1)"
 	>
 		<Sidebar />
 	</div>
 
-	<!-- Speed Graph (floating glass, bottom right) -->
+	<!-- Speed Graph (floating glass, bottom) -->
 	{#if busStore.selectedBusId}
 		<div
-			class="absolute bottom-3 right-3 z-10"
-			style="left: {appStore.sidebarOpen ? (appStore.mode === 'stats' ? '440px' : '340px') : '12px'}; transition: left 0.3s cubic-bezier(0.16, 1, 0.3, 1), bottom 0.3s cubic-bezier(0.16, 1, 0.3, 1)"
-			style:bottom={appStore.mode === 'playback' ? '88px' : '12px'}
+			class="absolute right-3 z-10 transition-all duration-300"
+			style="left: {appStore.sidebarOpen ? (appStore.mode === 'stats' ? '440px' : '340px') : '12px'};
+				bottom: {appStore.mode === 'playback' ? '88px' : '12px'};
+				transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1)"
 		>
 			<SpeedGraph />
 		</div>
@@ -47,10 +58,10 @@
 		</div>
 	{/if}
 
-	<!-- Keyboard shortcut hint (bottom right corner) -->
-	<div class="absolute bottom-3 right-3 z-5 text-text-muted text-[10px] font-mono opacity-40 pointer-events-none select-none"
-		style:bottom={busStore.selectedBusId ? '210px' : (appStore.mode === 'playback' ? '88px' : '12px')}
+	<!-- Keyboard shortcut hint -->
+	<div class="absolute right-4 z-[2] text-text-muted text-[10px] font-mono opacity-30 pointer-events-none select-none transition-all duration-300"
+		style:bottom={busStore.selectedBusId ? '210px' : (appStore.mode === 'playback' ? '92px' : '16px')}
 	>
-		B: sidebar &middot; 1-4: modes &middot; Esc: deselect
+		B sidebar &middot; 1-4 modes &middot; Esc deselect &middot; F follow
 	</div>
 </div>

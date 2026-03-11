@@ -20,22 +20,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: subosito/flutter-action@v2
+      - uses: actions/setup-node@v4
         with:
-          channel: stable
+          node-version: 22
+          cache: npm
 
       - name: Install dependencies
-        working-directory: app
-        run: flutter pub get
+        run: npm ci
 
-      - name: Build web app
-        working-directory: app
-        run: flutter build web --release --base-href "/${{ github.event.repository.name }}/"
+      - name: Build
+        run: npm run build
+        env:
+          BASE_PATH: '/${{ github.event.repository.name }}'
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: app/build/web
+          path: build
 
   deploy:
     needs: build
