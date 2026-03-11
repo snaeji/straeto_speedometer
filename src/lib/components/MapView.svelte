@@ -28,6 +28,20 @@
 	const TRAIL_MAX_AGE_MS = 120_000; // 2 minutes
 	const MARKER_ANIM_DURATION = 1800; // ms — smooth glide between positions
 
+	// Track known violators to detect NEW violations for shockwave
+	let knownViolators = new Set<string>();
+
+	function spawnShockwave(lng: number, lat: number) {
+		if (!map) return;
+		const el = document.createElement('div');
+		el.className = 'shockwave-ring';
+		const m = new maplibregl.Marker({ element: el, anchor: 'center' })
+			.setLngLat([lng, lat])
+			.addTo(map);
+		// Auto-remove after animation completes
+		setTimeout(() => m.remove(), 1200);
+	}
+
 	onMount(() => {
 		map = new maplibregl.Map({
 			container: mapContainer,
@@ -264,6 +278,18 @@
 			}
 		}
 
+		// Detect new violations and spawn shockwaves
+		const newViolators = new Set<string>();
+		for (const bus of currentBuses) {
+			if (bus.isViolation) {
+				newViolators.add(bus.busId);
+				if (!knownViolators.has(bus.busId)) {
+					spawnShockwave(bus.lng, bus.lat);
+				}
+			}
+		}
+		knownViolators = newViolators;
+
 		// Update trail lines on map
 		updateTrailLines(currentBuses);
 	});
@@ -487,5 +513,43 @@
 	@keyframes marker-info-appear {
 		from { opacity: 0; transform: translateX(-50%) translateY(-4px); }
 		to { opacity: 1; transform: translateX(-50%) translateY(0); }
+	}
+
+	/* Violation shockwave expanding ring on map */
+	:global(.shockwave-ring) {
+		width: 10px;
+		height: 10px;
+		border-radius: 50%;
+		pointer-events: none;
+		position: relative;
+	}
+
+	:global(.shockwave-ring)::before,
+	:global(.shockwave-ring)::after {
+		content: '';
+		position: absolute;
+		top: 50%;
+		left: 50%;
+		border-radius: 50%;
+		transform: translate(-50%, -50%);
+	}
+
+	:global(.shockwave-ring)::before {
+		width: 20px;
+		height: 20px;
+		border: 2px solid rgba(239, 68, 68, 0.8);
+		animation: shockwave-expand 1.2s ease-out forwards;
+	}
+
+	:global(.shockwave-ring)::after {
+		width: 20px;
+		height: 20px;
+		border: 1px solid rgba(239, 68, 68, 0.4);
+		animation: shockwave-expand 1.2s ease-out 0.15s forwards;
+	}
+
+	@keyframes shockwave-expand {
+		0% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+		100% { transform: translate(-50%, -50%) scale(8); opacity: 0; }
 	}
 </style>
