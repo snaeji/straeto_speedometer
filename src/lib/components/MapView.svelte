@@ -17,6 +17,7 @@
 	}>();
 	let resizeObserver: ResizeObserver | null = null;
 	let animFrameId: number | null = null;
+	let ghostMarker: maplibregl.Marker | null = null;
 
 	// Track position history for bus trails
 	let busTrails = new Map<string, { lng: number; lat: number; ts: number }[]>();
@@ -243,11 +244,30 @@
 	onDestroy(() => {
 		if (animFrameId) cancelAnimationFrame(animFrameId);
 		resizeObserver?.disconnect();
+		if (ghostMarker) { ghostMarker.remove(); ghostMarker = null; }
 		for (const { marker } of markers.values()) {
 			marker.remove();
 		}
 		markers.clear();
 		map?.remove();
+	});
+
+	// Ghost dot: show hovered history point on map
+	$effect(() => {
+		const point = busStore.hoveredHistoryPoint;
+		if (!point || !map) {
+			if (ghostMarker) { ghostMarker.remove(); ghostMarker = null; }
+			return;
+		}
+		if (ghostMarker) {
+			ghostMarker.setLngLat([point.lng, point.lat]);
+		} else {
+			const el = document.createElement('div');
+			el.className = 'ghost-position-dot';
+			ghostMarker = new maplibregl.Marker({ element: el, anchor: 'center' })
+				.setLngLat([point.lng, point.lat])
+				.addTo(map);
+		}
 	});
 
 	// Update markers when bus data changes
@@ -629,5 +649,22 @@
 	@keyframes shockwave-expand {
 		0% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
 		100% { transform: translate(-50%, -50%) scale(8); opacity: 0; }
+	}
+
+	/* Ghost dot: shows GPS position for hovered chart point */
+	:global(.ghost-position-dot) {
+		width: 12px;
+		height: 12px;
+		border-radius: 50%;
+		background: rgba(6, 182, 212, 0.3);
+		border: 2px solid #06b6d4;
+		box-shadow: 0 0 8px rgba(6, 182, 212, 0.5);
+		animation: ghost-pulse 1.5s ease-in-out infinite;
+		pointer-events: none;
+	}
+
+	@keyframes ghost-pulse {
+		0%, 100% { transform: scale(1); opacity: 0.8; }
+		50% { transform: scale(1.4); opacity: 1; }
 	}
 </style>

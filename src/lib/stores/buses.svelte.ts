@@ -37,6 +37,9 @@ class BusStore {
 	/** In-memory history of all bus locations for live stats */
 	liveHistory = $state<BusLocation[]>([]);
 
+	/** Hovered point on SpeedGraph timeline — shown as ghost dot on map */
+	hoveredHistoryPoint = $state<{ lat: number; lng: number; timestamp: number; speedKmh: number } | null>(null);
+
 	/** Callbacks when a bus goes stale (for speed calculator reset) */
 	private onBusStaleCallbacks: ((busId: string) => void)[] = [];
 
@@ -113,6 +116,11 @@ class BusStore {
 	selectBus(busId: string | null) {
 		this.selectedBusId = busId;
 		this.autoFollow = true;
+		this.hoveredHistoryPoint = null;
+	}
+
+	setHoveredHistoryPoint(point: { lat: number; lng: number; timestamp: number; speedKmh: number } | null) {
+		this.hoveredHistoryPoint = point;
 	}
 
 	setRouteFilter(routes: Set<string> | null) {
