@@ -80,8 +80,11 @@
 		}
 	}
 
+	// Reload when selected bus changes or liveHistory grows
 	$effect(() => {
-		if (busStore.selectedBusId) {
+		const _busId = busStore.selectedBusId;
+		const _len = busStore.liveHistory.length;
+		if (_busId) {
 			loadHistory();
 		}
 	});

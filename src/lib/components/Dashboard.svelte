@@ -7,15 +7,25 @@
 	import PlaybackBar from './PlaybackBar.svelte';
 	import SpeedGraph from './SpeedGraph.svelte';
 	import ViolationFlash from './ViolationFlash.svelte';
+
+	// Time-of-day ambient tint (Iceland = UTC+0, no DST)
+	function getAmbientColor(): string {
+		const hour = new Date().getUTCHours();
+		if (hour >= 6 && hour < 8) return 'rgba(255, 140, 50, 0.04)'; // sunrise
+		if (hour >= 20 && hour < 22) return 'rgba(180, 80, 40, 0.05)'; // sunset
+		if (hour >= 8 && hour < 20) return 'rgba(50, 100, 180, 0.02)'; // daytime
+		return 'rgba(0, 0, 0, 0)'; // night
+	}
+	const ambientColor = getAmbientColor();
 </script>
 
 <div class="h-screen w-screen overflow-hidden bg-bg-primary relative">
 	<!-- Map (always full background) -->
 	<MapView />
 
-	<!-- Vignette overlay for depth -->
+	<!-- Vignette overlay for depth + time-of-day ambient tint -->
 	<div class="absolute inset-0 pointer-events-none z-[1]"
-		style="background: radial-gradient(ellipse at center, transparent 40%, rgba(3, 7, 18, 0.4) 100%)"
+		style="background: radial-gradient(ellipse at center, {ambientColor} 0%, rgba(3, 7, 18, 0.4) 100%)"
 	></div>
 
 	<!-- Top edge shadow -->
