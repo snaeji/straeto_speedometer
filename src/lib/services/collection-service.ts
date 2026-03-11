@@ -50,6 +50,21 @@ export class CollectionService {
 		}
 	}
 
+	/** Process a single bus location through speed calc + speed limit (for demo replay). */
+	processFixForDemo(bus: BusLocation): BusLocation | null {
+		const withSpeed = this.speedCalculator.processFix(bus);
+		if (!withSpeed) return null;
+
+		const speedLimit = this.speedLimitService.getSpeedLimit(bus.lat, bus.lng);
+		const isViolation =
+			withSpeed.speedKmh != null && withSpeed.speedKmh > speedLimit;
+
+		return copyBusLocationWith(withSpeed, {
+			speedLimitKmh: speedLimit,
+			isViolation,
+		});
+	}
+
 	/** Reset speed calculator state for a specific bus. */
 	resetBus(busId: string): void {
 		this.speedCalculator.resetBus(busId);

@@ -4,7 +4,7 @@
 	import { busStore, getBusStatus, getStatusColor } from '$lib/stores/buses.svelte';
 	import { appStore } from '$lib/stores/app.svelte';
 	import { MAP_CENTER, MAP_ZOOM } from '$lib/utils/constants';
-	import { DEMO_ROUTES } from '$lib/services/mock-data';
+
 
 	let mapContainer: HTMLDivElement;
 	let map: maplibregl.Map | null = null;
@@ -399,13 +399,14 @@
 			return;
 		}
 
-		const route = DEMO_ROUTES.find((r: typeof DEMO_ROUTES[0]) => r.routeNr === selected.routeNr);
-		if (!route || route.waypoints.length < 2) {
+		// Build route path from the bus's trail history
+		const trail = busTrails.get(selected.busId);
+		if (!trail || trail.length < 2) {
 			source.setData({ type: 'FeatureCollection', features: [] });
 			return;
 		}
 
-		const coordinates = route.waypoints.map((wp: { lat: number; lng: number }) => [wp.lng, wp.lat]);
+		const coordinates = trail.map((p: { lng: number; lat: number }) => [p.lng, p.lat]);
 		source.setData({
 			type: 'FeatureCollection',
 			features: [{

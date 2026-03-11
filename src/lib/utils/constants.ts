@@ -19,9 +19,11 @@ export const OUTLIER_MIN_TIME_GAP_S = 1;
 
 // Step 2: Minimum distance threshold
 export const MIN_DISTANCE_THRESHOLD_M = 10.0;
+export const STATIONARY_CONFIRM_COUNT = 2; // Consecutive sub-threshold readings before confirming stopped
 
 // Step 3: Speed smoothing
-export const SMOOTHING_BUFFER_SIZE = 4;
+export const SMOOTHING_BUFFER_SIZE = 6;
+export const MIN_SPEED_READINGS = 3; // Require this many readings before reporting speed
 
 // Step 4: Conservative speed factor
 export const CONSERVATIVE_SPEED_FACTOR = 0.95;

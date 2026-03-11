@@ -2,7 +2,8 @@ import { POLLING_INTERVAL_MS } from '$lib/utils/constants';
 import { CollectionService } from '$lib/services/collection-service';
 import { SpeedLimitService } from '$lib/services/speed-limit-service';
 import { StorageService } from '$lib/services/storage-service';
-import { generateMockData, resetMockData } from '$lib/services/mock-data';
+import { generateMockData, resetMockData, ensureSampleLoaded } from '$lib/services/mock-data';
+import type { BusLocation } from '$lib/types/bus';
 import { busStore } from './buses.svelte';
 
 class CollectionStore {
@@ -133,7 +134,7 @@ class CollectionStore {
 		await this.refreshStorageInfo();
 	}
 
-	startDemoMode() {
+	async startDemoMode() {
 		if (this.isDemoMode) return;
 		this.stopCollecting();
 		this.stopPreviewing();
@@ -143,9 +144,26 @@ class CollectionStore {
 		this.lastError = null;
 		resetMockData();
 
-		// Generate mock data immediately and on interval
+		// Load sample data before starting playback
+		await ensureSampleLoaded();
+
+		// Replay sample data snapshots through the speed pipeline
 		const tick = () => {
-			const locations = generateMockData();
+			let locations = generateMockData();
+			if (locations.length === 0) return;
+
+			// Process through speed calculator + speed limit service if available
+			if (this.collectionService) {
+				const processed: BusLocation[] = [];
+				for (const bus of locations) {
+					const withSpeed = this.collectionService.processFixForDemo(bus);
+					if (withSpeed) {
+						processed.push(withSpeed);
+					}
+				}
+				locations = processed;
+			}
+
 			busStore.updateBuses(locations, true);
 			this.recordsCollected += locations.length;
 			this.violationsDetected += locations.filter((l) => l.isViolation).length;

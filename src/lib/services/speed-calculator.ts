@@ -3,7 +3,9 @@ import {
 	OUTLIER_MAX_DISTANCE_M,
 	OUTLIER_MAX_SPEED_KMH,
 	MIN_DISTANCE_THRESHOLD_M,
+	STATIONARY_CONFIRM_COUNT,
 	SMOOTHING_BUFFER_SIZE,
+	MIN_SPEED_READINGS,
 	CONSERVATIVE_SPEED_FACTOR,
 } from '$lib/utils/constants';
 import { haversineDistanceM, speedKmh } from '$lib/utils/geo';
@@ -75,10 +77,21 @@ export class SpeedCalculator {
 
 		// Step 2: Minimum distance threshold
 		if (distanceM < MIN_DISTANCE_THRESHOLD_M) {
-			this.stationaryCount.set(busId, (this.stationaryCount.get(busId) ?? 0) + 1);
-			this.lastSpeed.delete(busId);
-			this.speedBuffers.delete(busId);
-			return copyBusLocationWith(location, { speedKmh: 0 });
+			const count = (this.stationaryCount.get(busId) ?? 0) + 1;
+			this.stationaryCount.set(busId, count);
+
+			if (count >= STATIONARY_CONFIRM_COUNT) {
+				// Confirmed stationary — clear speed buffer for clean resume,
+				// report 0. Position buffer is kept (updated above).
+				this.speedBuffers.delete(busId);
+				this.lastSpeed.set(busId, 0);
+				return copyBusLocationWith(location, { speedKmh: 0 });
+			}
+
+			// Not yet confirmed stationary — likely GPS jitter while moving.
+			// Hold previous speed instead of snapping to 0.
+			const prevSpeed = this.lastSpeed.get(busId) ?? 0;
+			return copyBusLocationWith(location, { speedKmh: prevSpeed });
 		}
 
 		// Bus is moving
@@ -93,6 +106,12 @@ export class SpeedCalculator {
 		spdBuffer.push(rawSpeed);
 		if (spdBuffer.length > SMOOTHING_BUFFER_SIZE) {
 			spdBuffer.shift();
+		}
+
+		// Not enough readings yet for reliable speed — report 0
+		if (spdBuffer.length < MIN_SPEED_READINGS) {
+			this.lastSpeed.set(busId, 0);
+			return copyBusLocationWith(location, { speedKmh: 0 });
 		}
 
 		const avgSpeed = spdBuffer.reduce((a, b) => a + b, 0) / spdBuffer.length;
