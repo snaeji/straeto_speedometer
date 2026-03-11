@@ -358,10 +358,13 @@
 
 			const status = getBusStatus(bus);
 			const color = getStatusColor(status);
+			const isSelected = bus.busId === busStore.selectedBusId;
 
 			// Create line segments with decreasing opacity
+			// Selected bus gets brighter, thicker trails
 			for (let i = 1; i < trail.length; i++) {
-				const opacity = (i / trail.length) * 0.5;
+				const baseOpacity = isSelected ? 0.7 : 0.4;
+				const opacity = (i / trail.length) * baseOpacity;
 				features.push({
 					type: 'Feature',
 					geometry: {
@@ -371,7 +374,7 @@
 							[trail[i].lng, trail[i].lat],
 						],
 					},
-					properties: { color, opacity },
+					properties: { color: isSelected ? '#06b6d4' : color, opacity },
 				});
 			}
 		}
