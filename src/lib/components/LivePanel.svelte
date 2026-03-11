@@ -6,7 +6,25 @@
 	import ViolationFeed from './ViolationFeed.svelte';
 
 	let showClearConfirm = $state(false);
+	let isExporting = $state(false);
 	let importInput: HTMLInputElement;
+
+	async function handleExport() {
+		if (!collectionStore.storageService || isExporting) return;
+		isExporting = true;
+		try {
+			const text = await collectionStore.storageService.exportJsonl();
+			const blob = new Blob([text], { type: 'application/jsonl' });
+			const url = URL.createObjectURL(blob);
+			const a = document.createElement('a');
+			a.href = url;
+			a.download = `straeto-${new Date().toISOString().slice(0, 10)}.jsonl`;
+			a.click();
+			URL.revokeObjectURL(url);
+		} finally {
+			isExporting = false;
+		}
+	}
 
 	async function handleImport() {
 		const files = importInput?.files;
@@ -108,18 +126,28 @@
 			</div>
 		{/if}
 
-		<!-- Import / Storage -->
-		<div class="flex items-center gap-2 text-xs">
+		<!-- Import / Export / Storage -->
+		<div class="flex items-center gap-1.5 text-xs flex-wrap">
 			<input bind:this={importInput} type="file" accept=".jsonl" multiple class="hidden" onchange={handleImport} />
 			<button
-				class="px-3 py-1.5 rounded-lg bg-white/[0.03] text-text-secondary border border-white/[0.06] hover:border-white/[0.1] transition-all cursor-pointer"
+				class="px-2.5 py-1.5 rounded-lg bg-white/[0.03] text-text-secondary border border-white/[0.06] hover:border-white/[0.1] transition-all cursor-pointer"
 				onclick={() => importInput?.click()}
 			>
-				Import .jsonl
+				Import
 			</button>
 
+			{#if collectionStore.recordCount > 0}
+				<button
+					class="px-2.5 py-1.5 rounded-lg bg-white/[0.03] text-text-secondary border border-white/[0.06] hover:border-white/[0.1] transition-all cursor-pointer"
+					onclick={handleExport}
+					disabled={isExporting}
+				>
+					{isExporting ? 'Exporting...' : 'Export'}
+				</button>
+			{/if}
+
 			<div class="flex-1 text-right text-text-muted font-mono text-[10px]">
-				{collectionStore.recordCount.toLocaleString()} records &middot; {formatBytes(collectionStore.storageBytes)}
+				{collectionStore.recordCount.toLocaleString()} rec &middot; {formatBytes(collectionStore.storageBytes)}
 			</div>
 
 			{#if collectionStore.recordCount > 0}
