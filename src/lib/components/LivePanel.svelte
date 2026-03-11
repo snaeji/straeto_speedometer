@@ -3,6 +3,7 @@
 	import { busStore } from '$lib/stores/buses.svelte';
 	import { formatBytes, formatElapsed } from '$lib/utils/format';
 	import BusList from './BusList.svelte';
+	import ViolationFeed from './ViolationFeed.svelte';
 
 	let showClearConfirm = $state(false);
 	let importInput: HTMLInputElement;
@@ -146,4 +147,7 @@
 	<div class="flex-1 overflow-y-auto">
 		<BusList />
 	</div>
+
+	<!-- Violation Feed -->
+	<ViolationFeed />
 </div>

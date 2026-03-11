@@ -285,7 +285,10 @@
 <div bind:this={mapContainer} class="absolute inset-0 w-full h-full"></div>
 
 <style>
+	/* Do NOT add transition on transform — MapLibre uses transform to position
+	   markers on screen. A CSS transition causes markers to lag behind during
+	   pan/zoom, making them appear to float in the wrong location (e.g. the sea). */
 	:global(.bus-marker) {
-		transition: transform 0.3s ease-out;
+		will-change: transform;
 	}
 </style>

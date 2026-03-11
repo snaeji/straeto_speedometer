@@ -120,6 +120,22 @@ export class StorageService {
 		return locations.length;
 	}
 
+	/** Export all data as JSONL text. */
+	async exportJsonl(): Promise<string> {
+		if (!this.db) return '';
+		const tx = this.db.transaction(STORE_NAME, 'readonly');
+		const index = tx.objectStore(STORE_NAME).index('timestamp');
+		const lines: string[] = [];
+
+		let cursor = await index.openCursor();
+		while (cursor) {
+			lines.push(JSON.stringify(cursor.value));
+			cursor = await cursor.continue();
+		}
+
+		return lines.join('\n');
+	}
+
 	/**
 	 * Stream all records for stats computation.
 	 * Yields batches to avoid loading everything into memory.
