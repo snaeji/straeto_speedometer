@@ -197,7 +197,20 @@ async function main() {
 				break;
 			}
 
-			case 'switch-mode': {
+			case 'click-text': {
+				// Click a button by its text content
+				const text = args.join(' ');
+				if (!text) { console.error('Usage: click-text <button text>'); process.exit(1); }
+				const found = await page.$$eval('button', (buttons, searchText) => {
+					const btn = buttons.find(b => b.textContent?.trim() === searchText);
+					if (btn) { btn.click(); return true; }
+					return false;
+				}, text);
+				console.log(found ? `Clicked: "${text}"` : `Button "${text}" not found`);
+				break;
+			}
+
+		case 'switch-mode': {
 				// Switch mode and optionally screenshot
 				const mode = args[0]; // live, playback, stats, heatmap
 				const modeMap = { live: 3, playback: 4, stats: 5, heatmap: 6 };

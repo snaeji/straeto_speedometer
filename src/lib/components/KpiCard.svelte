@@ -18,28 +18,33 @@
 		alert: 'M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z',
 		speed: 'M20.38 8.57l-1.23 1.85a8 8 0 01-.22 7.58H5.07A8 8 0 0115.58 6.85l1.85-1.23A10 10 0 003.35 19a2 2 0 001.72 1h13.85a2 2 0 001.74-1 10 10 0 00-.27-10.44zM10.59 15.41a2 2 0 002.83 0l5.66-8.49-8.49 5.66a2 2 0 000 2.83z',
 	};
+
+	let isDanger = $derived(variant === 'danger' && value > 0);
 </script>
 
 <div
-	class="flex items-center gap-1.5 px-2 py-1 rounded-lg border transition-all duration-200
-		{variant === 'danger' && value > 0
-			? 'bg-gradient-to-br from-danger/[0.12] to-danger/[0.04] border-danger/20 glow-danger'
-			: 'bg-gradient-to-br from-white/[0.04] to-white/[0.01] border-white/[0.06] hover:border-white/[0.1]'}"
+	class="flex items-center gap-2 px-2.5 py-1.5 rounded-xl border transition-all duration-300 relative overflow-hidden
+		{isDanger
+			? 'bg-gradient-to-br from-danger/[0.15] to-danger/[0.05] border-danger/25'
+			: 'bg-gradient-to-br from-white/[0.05] to-white/[0.01] border-white/[0.06] hover:border-white/[0.12]'}"
+	style={isDanger ? 'box-shadow: 0 0 16px rgba(239,68,68,0.12), inset 0 0 20px rgba(239,68,68,0.05);' : ''}
 >
 	<svg
-		width="12"
-		height="12"
+		width="13"
+		height="13"
 		viewBox="0 0 24 24"
 		fill="currentColor"
-		class="shrink-0 {variant === 'danger' && value > 0 ? 'text-danger' : 'text-text-muted'}"
+		class="shrink-0 {isDanger ? 'text-danger' : 'text-text-muted'}"
 	>
 		<path d={iconPaths[icon] ?? iconPaths.bus} />
 	</svg>
-	<div class="flex flex-col">
-		<span class="text-[9px] uppercase tracking-wider text-text-muted leading-none">{label}</span>
+	<div class="flex flex-col min-w-0">
+		<span class="text-[9px] uppercase tracking-wider text-text-muted leading-none font-medium">{label}</span>
 		<div class="flex items-baseline gap-0.5">
-			<span class="text-sm font-semibold font-mono tabular-nums leading-tight
-				{variant === 'danger' && value > 0 ? 'text-danger text-glow' : 'text-text-primary'}">
+			<span class="text-sm font-bold font-mono tabular-nums leading-tight
+				{isDanger ? 'text-danger' : 'text-text-primary'}"
+				style={isDanger ? 'text-shadow: 0 0 12px rgba(239,68,68,0.4);' : ''}
+			>
 				{value}
 			</span>
 			{#if unit}

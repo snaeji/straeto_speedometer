@@ -115,32 +115,51 @@
 	</div>
 {:else if !initialized}
 	<div class="flex items-center justify-center h-screen bg-bg-primary relative overflow-hidden">
-		<!-- Ambient background glow -->
-		<div class="absolute top-1/4 left-1/2 -translate-x-1/2 w-[600px] h-[600px] rounded-full opacity-20"
-			style="background: radial-gradient(circle, rgba(6, 182, 212, 0.15) 0%, transparent 70%)"
+		<!-- Animated ambient glows -->
+		<div class="absolute top-1/3 left-1/3 w-[500px] h-[500px] rounded-full opacity-15"
+			style="background: radial-gradient(circle, rgba(6, 182, 212, 0.2) 0%, transparent 70%);
+				animation: loading-glow-1 4s ease-in-out infinite alternate;"
+		></div>
+		<div class="absolute bottom-1/3 right-1/3 w-[400px] h-[400px] rounded-full opacity-10"
+			style="background: radial-gradient(circle, rgba(16, 185, 129, 0.2) 0%, transparent 70%);
+				animation: loading-glow-2 5s ease-in-out infinite alternate;"
 		></div>
 
-		<div class="flex flex-col items-center gap-6 z-10">
-			<!-- Logo -->
-			<div class="flex items-center gap-3 mb-2">
-				<div class="w-10 h-10 rounded-xl bg-accent/15 border border-accent/20 flex items-center justify-center">
-					<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" class="text-accent" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+		<!-- Grid pattern overlay -->
+		<div class="absolute inset-0 opacity-[0.02]"
+			style="background-image: linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px),
+				linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px);
+				background-size: 60px 60px;"
+		></div>
+
+		<div class="flex flex-col items-center gap-8 z-10" style="animation: fade-in 0.6s ease-out">
+			<!-- Logo with glow -->
+			<div class="flex items-center gap-3">
+				<div class="w-12 h-12 rounded-2xl bg-accent/15 border border-accent/20 flex items-center justify-center"
+					style="box-shadow: 0 0 30px rgba(6, 182, 212, 0.15), 0 0 60px rgba(6, 182, 212, 0.05);"
+				>
+					<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" class="text-accent" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 						<circle cx="12" cy="12" r="10" />
 						<path d="M12 6v6l4 2" />
 					</svg>
 				</div>
-				<span class="text-xl font-semibold tracking-wider text-text-primary">STRAETO</span>
+				<div class="flex flex-col">
+					<span class="text-xl font-bold tracking-[0.2em] text-text-primary">STRAETO</span>
+					<span class="text-[10px] tracking-[0.3em] text-text-muted font-medium uppercase">Speedometer</span>
+				</div>
 			</div>
 
 			<!-- Progress bar -->
-			<div class="w-48 h-1 rounded-full bg-white/[0.06] overflow-hidden">
-				<div
-					class="h-full rounded-full transition-all duration-500 ease-out"
-					style="width: {loadingProgress}%; background: linear-gradient(90deg, #06b6d4, #10b981)"
-				></div>
+			<div class="w-56 flex flex-col items-center gap-3">
+				<div class="w-full h-1 rounded-full bg-white/[0.06] overflow-hidden">
+					<div
+						class="h-full rounded-full transition-all duration-500 ease-out"
+						style="width: {loadingProgress}%; background: linear-gradient(90deg, #06b6d4, #10b981);
+							box-shadow: 0 0 10px rgba(6, 182, 212, 0.4);"
+					></div>
+				</div>
+				<p class="text-text-muted text-[11px] font-mono tracking-wider">{loadingMessage}</p>
 			</div>
-
-			<p class="text-text-muted text-xs font-mono tracking-wide">{loadingMessage}</p>
 		</div>
 	</div>
 {:else}

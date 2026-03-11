@@ -3,7 +3,7 @@
 	import type { BusLocation } from '$lib/types/bus';
 
 	type SortMode = 'route' | 'speed' | 'status';
-	let sortMode = $state<SortMode>('route');
+	let sortMode = $state<SortMode>('status');
 
 	function sortBuses(buses: BusLocation[], mode: SortMode): BusLocation[] {
 		return buses.slice().sort((a, b) => {
@@ -17,7 +17,7 @@
 					const order: Record<BusStatus, number> = { violation: 0, approaching: 1, normal: 2, nodata: 3 };
 					const diff = order[getBusStatus(a)] - order[getBusStatus(b)];
 					if (diff !== 0) return diff;
-					return parseInt(a.routeNr) - parseInt(b.routeNr);
+					return (b.speedKmh ?? 0) - (a.speedKmh ?? 0);
 				}
 				default: { // route
 					const routeA = parseInt(a.routeNr);
@@ -31,6 +31,11 @@
 
 	let sortedBuses = $derived(sortBuses(busStore.activeBuses, sortMode));
 	let violationBuses = $derived(sortedBuses.filter((b) => b.isViolation));
+
+	function getSpeedBarWidth(bus: BusLocation): number {
+		if (!bus.speedKmh || !bus.speedLimitKmh) return 0;
+		return Math.min(100, (bus.speedKmh / bus.speedLimitKmh) * 100);
+	}
 </script>
 
 {#if sortedBuses.length === 0}
@@ -51,10 +56,10 @@
 	<div class="p-2">
 		<!-- Header with sort options -->
 		<div class="flex items-center justify-between px-2 py-1.5 mb-1">
-			<span class="text-[10px] text-text-muted uppercase tracking-wider">
+			<span class="text-[10px] text-text-muted uppercase tracking-wider font-medium">
 				{sortedBuses.length} buses
 				{#if violationBuses.length > 0}
-					<span class="text-danger">&middot; {violationBuses.length} violations</span>
+					<span class="text-danger font-semibold"> &middot; {violationBuses.length} violating</span>
 				{/if}
 			</span>
 			<div class="flex gap-0.5 bg-white/[0.02] rounded-lg p-0.5 border border-white/[0.04]">
@@ -76,18 +81,21 @@
 			{@const status = getBusStatus(bus)}
 			{@const color = getStatusColor(status)}
 			{@const isSelected = bus.busId === busStore.selectedBusId}
+			{@const speedPct = getSpeedBarWidth(bus)}
 
 			<button
-				class="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl transition-all duration-150 cursor-pointer
+				class="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl transition-all duration-150 cursor-pointer group
 					{isSelected
 						? 'bg-accent/[0.08] border border-accent/15'
-						: 'hover:bg-white/[0.03] border border-transparent'}"
+						: status === 'violation'
+							? 'bg-danger/[0.04] hover:bg-danger/[0.08] border border-danger/[0.08]'
+							: 'hover:bg-white/[0.03] border border-transparent'}"
 				onclick={() => busStore.selectBus(isSelected ? null : bus.busId)}
 			>
 				<!-- Route badge -->
 				<div
-					class="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold text-white shrink-0 transition-transform duration-150"
-					style="background: {color}; {isSelected ? 'transform: scale(1.1)' : ''}"
+					class="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold text-white shrink-0"
+					style="background: {color}; box-shadow: 0 0 8px {color}30;"
 				>
 					{bus.routeNr}
 				</div>
@@ -100,26 +108,30 @@
 							<span class="text-[10px] text-text-muted truncate">&rarr; {bus.headsign}</span>
 						{/if}
 					</div>
-					<div class="flex items-center gap-1 mt-0.5">
-						{#if bus.speedKmh != null}
-							<span class="text-[11px] font-mono tabular-nums font-medium" style="color: {color}">
-								{bus.speedKmh.toFixed(1)}
+
+					{#if bus.speedKmh != null && bus.speedLimitKmh}
+						<!-- Speed bar -->
+						<div class="flex items-center gap-2 mt-1">
+							<div class="flex-1 h-1.5 rounded-full bg-white/[0.04] overflow-hidden">
+								<div
+									class="h-full rounded-full transition-all duration-500"
+									style="width: {speedPct}%; background: {color}; box-shadow: 0 0 6px {color}40;"
+								></div>
+							</div>
+							<span class="text-[10px] font-mono tabular-nums font-semibold shrink-0 w-[52px] text-right" style="color: {color}">
+								{bus.speedKmh.toFixed(0)}<span class="text-text-muted font-normal">/{bus.speedLimitKmh}</span>
 							</span>
-							<span class="text-[10px] text-text-muted font-mono">
-								/ {bus.speedLimitKmh ?? '--'}
-							</span>
-							<span class="text-[9px] text-text-muted">km/h</span>
-						{:else}
-							<span class="text-[10px] text-text-muted italic">awaiting data</span>
-						{/if}
-					</div>
+						</div>
+					{:else}
+						<span class="text-[10px] text-text-muted italic mt-0.5 block">awaiting data</span>
+					{/if}
 				</div>
 
 				<!-- Violation indicator -->
 				{#if bus.isViolation}
 					<div class="relative shrink-0">
-						<div class="w-2 h-2 rounded-full bg-danger" style="box-shadow: 0 0 6px rgba(239,68,68,0.5)"></div>
-						<div class="absolute inset-0 w-2 h-2 rounded-full bg-danger animate-pulse-ring"></div>
+						<div class="w-2.5 h-2.5 rounded-full bg-danger" style="box-shadow: 0 0 8px rgba(239,68,68,0.6)"></div>
+						<div class="absolute inset-0 w-2.5 h-2.5 rounded-full bg-danger animate-pulse-ring"></div>
 					</div>
 				{/if}
 			</button>
