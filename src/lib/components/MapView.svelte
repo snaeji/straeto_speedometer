@@ -31,6 +31,10 @@
 	// Track known violators to detect NEW violations for shockwave
 	let knownViolators = new Set<string>();
 
+	// Accumulated violation points for heatmap (persists across updates)
+	let heatmapPoints: { lng: number; lat: number; weight: number }[] = [];
+	const HEATMAP_MAX_POINTS = 500;
+
 	function spawnShockwave(lng: number, lat: number) {
 		if (!map) return;
 		const el = document.createElement('div');
@@ -142,7 +146,7 @@
 				type: 'heatmap',
 				source: 'heatmap-data',
 				paint: {
-					'heatmap-weight': 1,
+					'heatmap-weight': ['coalesce', ['get', 'weight'], 1],
 					'heatmap-intensity': 0.8,
 					'heatmap-radius': 30,
 					'heatmap-opacity': 0.7,
@@ -278,13 +282,19 @@
 			}
 		}
 
-		// Detect new violations and spawn shockwaves
+		// Detect new violations, spawn shockwaves, accumulate heatmap
 		const newViolators = new Set<string>();
 		for (const bus of currentBuses) {
 			if (bus.isViolation) {
 				newViolators.add(bus.busId);
 				if (!knownViolators.has(bus.busId)) {
 					spawnShockwave(bus.lng, bus.lat);
+				}
+				// Accumulate for heatmap
+				const excess = (bus.speedKmh ?? 0) - (bus.speedLimitKmh ?? 50);
+				heatmapPoints.push({ lng: bus.lng, lat: bus.lat, weight: Math.max(1, excess / 10) });
+				if (heatmapPoints.length > HEATMAP_MAX_POINTS) {
+					heatmapPoints = heatmapPoints.slice(-HEATMAP_MAX_POINTS);
 				}
 			}
 		}
@@ -313,21 +323,27 @@
 		);
 	});
 
-	// Update heatmap data
+	// Update heatmap data with accumulated violation points
 	$effect(() => {
 		if (!map || !mapLoaded || appStore.mode !== 'heatmap') return;
 		const source = map.getSource('heatmap-data') as maplibregl.GeoJSONSource | undefined;
 		if (!source) return;
 
-		const violations = busStore.activeBuses.filter((b) => b.isViolation);
-		source.setData({
-			type: 'FeatureCollection',
-			features: violations.map((b) => ({
+		// Use accumulated points + current violations for richer heatmap
+		const currentViolations = busStore.activeBuses.filter((b) => b.isViolation);
+		const allPoints = [
+			...heatmapPoints.map(p => ({
+				type: 'Feature' as const,
+				geometry: { type: 'Point' as const, coordinates: [p.lng, p.lat] },
+				properties: { weight: p.weight },
+			})),
+			...currentViolations.map((b) => ({
 				type: 'Feature' as const,
 				geometry: { type: 'Point' as const, coordinates: [b.lng, b.lat] },
-				properties: {},
+				properties: { weight: 2 },
 			})),
-		});
+		];
+		source.setData({ type: 'FeatureCollection', features: allPoints });
 	});
 
 	function updateTrailLines(buses: typeof busStore.activeBuses) {
