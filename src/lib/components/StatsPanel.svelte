@@ -2,6 +2,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import * as echarts from 'echarts';
 	import { statsStore } from '$lib/stores/stats.svelte';
+	import { busStore } from '$lib/stores/buses.svelte';
 	import { formatDistance } from '$lib/utils/format';
 
 	let routeChartEl: HTMLDivElement;

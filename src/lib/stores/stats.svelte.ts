@@ -1,5 +1,6 @@
 import type { BusLocation } from '$lib/types/bus';
 import { StorageService } from '$lib/services/storage-service';
+import { busStore } from './buses.svelte';
 
 export interface RouteStats {
 	routeNr: string;
@@ -43,7 +44,94 @@ class StatsStore {
 	}
 
 	async computeStats() {
-		if (!this.storageService || this.isComputing) return;
+		if (this.isComputing) return;
+
+		// Use live history if available (demo/preview mode), otherwise try stored data
+		if (busStore.liveHistory.length > 0) {
+			this.computeFromArray(busStore.liveHistory);
+		} else {
+			const storedCount = this.storageService ? await this.storageService.getRecordCount() : 0;
+			if (storedCount > 0 && this.storageService) {
+				await this.computeFromStorage();
+			}
+		}
+	}
+
+	computeFromArray(locations: BusLocation[]) {
+		this.isComputing = true;
+
+		const busStats = new Map<string, {
+			routeNr: string;
+			maxSpeed: number;
+			violations: number;
+		}>();
+
+		const routeAgg = new Map<string, {
+			totalSpeed: number;
+			count: number;
+			violations: number;
+		}>();
+
+		const hourlyViolations = new Array(24).fill(0);
+		const speedBuckets = new Array(10).fill(0);
+		const uniqueBuses = new Set<string>();
+		let totalDist = 0;
+		let totalRecs = 0;
+		let totalViol = 0;
+		const prevByBus = new Map<string, BusLocation>();
+
+		for (const loc of locations) {
+			totalRecs++;
+			uniqueBuses.add(loc.busId);
+
+			const prev = prevByBus.get(loc.busId);
+			if (prev && loc.speedKmh != null && loc.speedKmh > 0) {
+				const timeDeltaH = (loc.timestamp - prev.timestamp) / 3_600_000;
+				if (timeDeltaH > 0 && timeDeltaH < 0.5) {
+					totalDist += loc.speedKmh * timeDeltaH;
+				}
+			}
+			prevByBus.set(loc.busId, loc);
+
+			const bStat = busStats.get(loc.busId) ?? { routeNr: loc.routeNr, maxSpeed: 0, violations: 0 };
+			if (loc.speedKmh != null && loc.speedKmh > bStat.maxSpeed) bStat.maxSpeed = loc.speedKmh;
+			if (loc.isViolation) { bStat.violations++; totalViol++; hourlyViolations[new Date(loc.timestamp).getUTCHours()]++; }
+			busStats.set(loc.busId, bStat);
+
+			const rStat = routeAgg.get(loc.routeNr) ?? { totalSpeed: 0, count: 0, violations: 0 };
+			if (loc.speedKmh != null && loc.speedKmh > 0) { rStat.totalSpeed += loc.speedKmh; rStat.count++; }
+			if (loc.isViolation) rStat.violations++;
+			routeAgg.set(loc.routeNr, rStat);
+
+			if (loc.speedKmh != null) {
+				const idx = loc.speedKmh === 0 ? 0 : Math.min(9, Math.ceil(loc.speedKmh / 10));
+				speedBuckets[idx]++;
+			}
+		}
+
+		this.topSpeeders = Array.from(busStats.entries())
+			.map(([busId, s]) => ({ busId, routeNr: s.routeNr, maxSpeed: Math.round(s.maxSpeed * 10) / 10, violations: s.violations }))
+			.sort((a, b) => b.violations - a.violations || b.maxSpeed - a.maxSpeed)
+			.slice(0, 10);
+
+		this.routeStats = Array.from(routeAgg.entries())
+			.map(([routeNr, s]) => ({ routeNr, violations: s.violations, avgSpeed: s.count > 0 ? Math.round((s.totalSpeed / s.count) * 10) / 10 : 0, records: s.count }))
+			.sort((a, b) => b.violations - a.violations);
+
+		this.violationsByHour = hourlyViolations.map((count, hour) => ({ hour, count }));
+
+		const bucketLabels = ['0', '1-10', '11-20', '21-30', '31-40', '41-50', '51-60', '61-70', '71-80', '81+'];
+		this.speedDistribution = speedBuckets.map((count, i) => ({ range: bucketLabels[i], count }));
+
+		this.totalDistanceKm = Math.round(totalDist * 10) / 10;
+		this.totalBusesTracked = uniqueBuses.size;
+		this.totalRecords = totalRecs;
+		this.totalViolations = totalViol;
+		this.isComputing = false;
+	}
+
+	private async computeFromStorage() {
+		if (!this.storageService) return;
 
 		this.isComputing = true;
 

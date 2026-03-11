@@ -19,6 +19,8 @@ export function getStatusColor(status: BusStatus): string {
 	}
 }
 
+const LIVE_HISTORY_MAX = 10_000;
+
 class BusStore {
 	/** Map of busId -> BusLocation for current display */
 	buses = $state<Map<string, BusLocation>>(new Map());
@@ -31,6 +33,9 @@ class BusStore {
 
 	/** Whether auto-follow is enabled for selected bus */
 	autoFollow = $state(true);
+
+	/** In-memory history of all bus locations for live stats */
+	liveHistory: BusLocation[] = [];
 
 	/** Callbacks when a bus goes stale (for speed calculator reset) */
 	private onBusStaleCallbacks: ((busId: string) => void)[] = [];
@@ -89,6 +94,12 @@ class BusStore {
 			}
 
 			this.buses = newMap;
+
+			// Accumulate to live history for stats
+			this.liveHistory.push(...locations);
+			if (this.liveHistory.length > LIVE_HISTORY_MAX) {
+				this.liveHistory = this.liveHistory.slice(-LIVE_HISTORY_MAX);
+			}
 		} else {
 			// Replace entirely (playback mode)
 			const newMap = new Map<string, BusLocation>();
