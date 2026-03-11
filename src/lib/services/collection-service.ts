@@ -33,7 +33,7 @@ export class CollectionService {
 				// Speed limit lookup
 				const speedLimit = this.speedLimitService.getSpeedLimit(bus.lat, bus.lng);
 				const isViolation =
-					withSpeed.speedKmh != null && withSpeed.speedKmh > speedLimit;
+					withSpeed.speedKmh != null && withSpeed.speedKmh > speedLimit + 5;
 
 				processed.push(
 					copyBusLocationWith(withSpeed, {
@@ -57,7 +57,7 @@ export class CollectionService {
 
 		const speedLimit = this.speedLimitService.getSpeedLimit(bus.lat, bus.lng);
 		const isViolation =
-			withSpeed.speedKmh != null && withSpeed.speedKmh > speedLimit;
+			withSpeed.speedKmh != null && withSpeed.speedKmh > speedLimit + 5;
 
 		return copyBusLocationWith(withSpeed, {
 			speedLimitKmh: speedLimit,

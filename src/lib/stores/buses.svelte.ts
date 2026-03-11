@@ -1,12 +1,12 @@
 import type { BusLocation } from '$lib/types/bus';
-import { STALE_THRESHOLD_MS, VIOLATION_APPROACHING_RATIO } from '$lib/utils/constants';
+import { STALE_THRESHOLD_MS } from '$lib/utils/constants';
 
 export type BusStatus = 'violation' | 'approaching' | 'normal' | 'nodata';
 
 export function getBusStatus(bus: BusLocation): BusStatus {
 	if (bus.speedKmh == null || bus.speedLimitKmh == null) return 'nodata';
-	if (bus.isViolation) return 'violation';
-	if (bus.speedKmh > bus.speedLimitKmh * VIOLATION_APPROACHING_RATIO) return 'approaching';
+	if (bus.isViolation) return 'violation'; // 5+ km/h over limit
+	if (bus.speedKmh > bus.speedLimitKmh) return 'approaching'; // 0-5 km/h over limit
 	return 'normal';
 }
 

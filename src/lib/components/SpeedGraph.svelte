@@ -96,6 +96,84 @@
 		if (_busId) loadHistory();
 	});
 
+	/**
+	 * Resample speed data to a regular 2-second grid with linear interpolation.
+	 * This prevents the chart from drawing misleading straight lines across
+	 * irregular time gaps, and filters brief false-zero blips (<3s).
+	 */
+	function resampleForChart(sorted: BusLocation[]): {
+		speeds: [number, number][];
+		limits: [number, number][];
+	} {
+		if (sorted.length < 2) {
+			const t = sorted[0]?.timestamp ?? 0;
+			return {
+				speeds: [[t, sorted[0]?.speedKmh ?? 0]],
+				limits: [[t, sorted[0]?.speedLimitKmh ?? 50]],
+			};
+		}
+
+		const firstTs = sorted[0].timestamp;
+		const lastTs = sorted[sorted.length - 1].timestamp;
+		const STEP_MS = 2000; // 2-second grid
+
+		// Filter brief false-zero blips: if speed=0 for <4s between >3 km/h readings, interpolate through
+		const filtered: { t: number; speed: number; limit: number }[] = [];
+		for (let i = 0; i < sorted.length; i++) {
+			const s = sorted[i].speedKmh ?? 0;
+			const lim = sorted[i].speedLimitKmh ?? 50;
+			const t = sorted[i].timestamp;
+
+			if (s < 0.5 && i > 0 && i < sorted.length - 1) {
+				// Check if this is a brief zero blip
+				const prev = sorted[i - 1];
+				const next = sorted[i + 1];
+				const prevSpeed = prev.speedKmh ?? 0;
+				const nextSpeed = next.speedKmh ?? 0;
+				const gap = next.timestamp - prev.timestamp;
+				if (prevSpeed > 3 && nextSpeed > 3 && gap < 6000) {
+					// Interpolate through
+					const frac = (t - prev.timestamp) / gap;
+					filtered.push({ t, speed: prevSpeed + (nextSpeed - prevSpeed) * frac, limit: lim });
+					continue;
+				}
+			}
+			filtered.push({ t, speed: s, limit: lim });
+		}
+
+		// Resample to regular grid using linear interpolation
+		const speeds: [number, number][] = [];
+		const limits: [number, number][] = [];
+		let srcIdx = 0;
+
+		for (let t = firstTs; t <= lastTs; t += STEP_MS) {
+			// Advance source index to bracket current time
+			while (srcIdx < filtered.length - 1 && filtered[srcIdx + 1].t <= t) {
+				srcIdx++;
+			}
+
+			if (srcIdx >= filtered.length - 1) {
+				// Past end — use last value
+				speeds.push([t, filtered[filtered.length - 1].speed]);
+				limits.push([t, filtered[filtered.length - 1].limit]);
+			} else {
+				const a = filtered[srcIdx];
+				const b = filtered[srcIdx + 1];
+				const gap = b.t - a.t;
+				if (gap <= 0) {
+					speeds.push([t, a.speed]);
+					limits.push([t, a.limit]);
+				} else {
+					const frac = (t - a.t) / gap;
+					speeds.push([t, a.speed + (b.speed - a.speed) * frac]);
+					limits.push([t, a.limit + (b.limit - a.limit) * frac]);
+				}
+			}
+		}
+
+		return { speeds, limits };
+	}
+
 	// Render chart data
 	$effect(() => {
 		if (!chart || !selectedBus) return;
@@ -103,10 +181,8 @@
 		const sorted = [...history].sort((a, b) => a.timestamp - b.timestamp);
 		if (sorted.length === 0) { chart.clear(); return; }
 
+		const { speeds, limits } = resampleForChart(sorted);
 		const firstTs = sorted[0].timestamp;
-		const times = sorted.map((h) => Math.round((h.timestamp - firstTs) / 1000));
-		const speeds = sorted.map((h) => h.speedKmh ?? 0);
-		const limits = sorted.map((h) => h.speedLimitKmh ?? null);
 
 		chart.setOption({
 			backgroundColor: 'transparent',
@@ -116,23 +192,28 @@
 				backgroundColor: 'rgba(8, 14, 30, 0.9)',
 				borderColor: 'rgba(255,255,255,0.1)',
 				textStyle: { color: '#f1f5f9', fontSize: 10, fontFamily: 'var(--font-mono)' },
-				formatter: (params: {seriesName: string; value: number}[]) => {
+				formatter: (params: {seriesName: string; value: [number, number]}[]) => {
 					if (!Array.isArray(params)) return '';
 					let html = '';
 					for (const p of params) {
 						const color = p.seriesName === 'Speed' ? '#06b6d4' : '#f59e0b';
-						html += `<span style="color:${color}">${p.seriesName}: ${p.value?.toFixed?.(1) ?? '--'}</span><br/>`;
+						const val = p.value?.[1];
+						html += `<span style="color:${color}">${p.seriesName}: ${val?.toFixed?.(1) ?? '--'}</span><br/>`;
 					}
 					return html;
 				},
 			},
 			xAxis: {
-				type: 'category', data: times,
+				type: 'value',
+				min: firstTs,
 				axisLine: { lineStyle: { color: 'rgba(255,255,255,0.06)' } },
+				splitLine: { show: false },
 				axisLabel: {
 					color: '#64748b', fontSize: 8,
-					formatter: (v: string) => { const s = parseInt(v); return s >= 60 ? `${Math.floor(s / 60)}m` : `${s}s`; },
-					interval: 'auto',
+					formatter: (v: number) => {
+						const s = Math.round((v - firstTs) / 1000);
+						return s >= 60 ? `${Math.floor(s / 60)}m` : `${s}s`;
+					},
 				},
 			},
 			yAxis: {
@@ -143,7 +224,7 @@
 			series: [
 				{
 					name: 'Speed', type: 'line', data: speeds,
-					smooth: true, symbol: 'none',
+					smooth: 0.3, smoothMonotone: 'x', symbol: 'none',
 					lineStyle: { color: '#06b6d4', width: 1.5 },
 					areaStyle: {
 						color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
