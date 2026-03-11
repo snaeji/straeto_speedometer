@@ -3,6 +3,7 @@
 	import * as echarts from 'echarts';
 	import { busStore, getStatusColor, getBusStatus, type BusStatus } from '$lib/stores/buses.svelte';
 	import { collectionStore } from '$lib/stores/collection.svelte';
+	import { formatTime } from '$lib/utils/format';
 	import type { BusLocation } from '$lib/types/bus';
 
 	let { expanded = $bindable(false), chartBarLeft = 12 }: { expanded: boolean; chartBarLeft: number } = $props();
@@ -12,6 +13,12 @@
 	let ro: ResizeObserver | null = null;
 	let refreshTimer: ReturnType<typeof setInterval> | null = null;
 	let history = $state<BusLocation[]>([]);
+
+	// Live edge tracking
+	let isAtLiveEdge = $state(true);
+	let isProgrammaticZoom = false;
+	let currentWindowMs = $state(60_000); // Current zoom window size (default 1 min)
+	let lastHoveredTs: number | null = null;
 
 	const selectedBus = $derived(busStore.selectedBus);
 	const status = $derived<BusStatus>(selectedBus ? getBusStatus(selectedBus) : 'nodata');
@@ -33,6 +40,14 @@
 	const limitTickStart = $derived(polarToXY(50, 50, 33, limitAngle));
 	const limitTickEnd = $derived(polarToXY(50, 50, 43, limitAngle));
 
+	// Human-readable zoom level
+	const zoomLabel = $derived.by(() => {
+		const sec = Math.round(currentWindowMs / 1000);
+		if (sec < 60) return `${sec}s`;
+		if (sec < 3600) return `${Math.round(sec / 60)}m`;
+		return `${(sec / 3600).toFixed(1)}h`;
+	});
+
 	function polarToXY(cx: number, cy: number, r: number, angleDeg: number) {
 		const rad = ((angleDeg - 210) * Math.PI) / 180;
 		return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
@@ -45,13 +60,91 @@
 		return `M ${start.x} ${start.y} A ${r} ${r} 0 ${largeArc} 1 ${end.x} ${end.y}`;
 	}
 
+	function jumpToLiveEdge() {
+		isAtLiveEdge = true;
+		currentWindowMs = 60_000;
+		renderChart();
+	}
+
+	function setTimeWindow(ms: number) {
+		isAtLiveEdge = true;
+		if (ms === Infinity) {
+			// "All" — show entire history
+			const range = history.length > 1
+				? history[history.length - 1].timestamp - history[0].timestamp + 4000
+				: 60_000;
+			currentWindowMs = range;
+		} else {
+			currentWindowMs = ms;
+		}
+		renderChart();
+	}
+
 	function initChart() {
 		if (chart) { chart.dispose(); chart = null; }
 		if (ro) { ro.disconnect(); ro = null; }
+		busStore.setHoveredHistoryPoint(null);
+		lastHoveredTs = null;
+		isAtLiveEdge = true;
 		if (!chartEl) return;
 		chart = echarts.init(chartEl, undefined, { renderer: 'canvas' });
+
+		// Hover: show ghost dot on map at GPS position for hovered time
+		chart.on('mousemove', (params: any) => {
+			if (params.componentType === 'series' && params.value) {
+				const closest = findClosestRecord(history, params.value[0]);
+				if (closest && closest.timestamp !== lastHoveredTs) {
+					lastHoveredTs = closest.timestamp;
+					busStore.setHoveredHistoryPoint({
+						lat: closest.lat, lng: closest.lng,
+						timestamp: closest.timestamp,
+						speedKmh: closest.speedKmh ?? 0,
+					});
+				}
+			}
+		});
+		chart.on('globalout', () => {
+			lastHoveredTs = null;
+			busStore.setHoveredHistoryPoint(null);
+		});
+
+		// Track user zoom/pan — ignore programmatic updates
+		chart.on('dataZoom', () => {
+			if (isProgrammaticZoom) return;
+
+			const opt = chart!.getOption() as any;
+			const dz = opt?.dataZoom?.[0];
+			if (!dz || dz.startValue == null || dz.endValue == null) return;
+
+			currentWindowMs = dz.endValue - dz.startValue;
+
+			// Check if user is near the live edge
+			const lastTs = history.length > 0 ? history[history.length - 1].timestamp : 0;
+			isAtLiveEdge = (lastTs - dz.endValue) < 5000;
+		});
+
+		// Double-click: jump to live edge
+		chart.on('dblclick', () => {
+			jumpToLiveEdge();
+		});
+
 		ro = new ResizeObserver(() => chart?.resize());
 		ro.observe(chartEl);
+	}
+
+	/** Binary search for the closest record by timestamp */
+	function findClosestRecord(records: BusLocation[], timestamp: number): BusLocation | null {
+		if (records.length === 0) return null;
+		let lo = 0, hi = records.length - 1;
+		while (lo < hi) {
+			const mid = (lo + hi) >> 1;
+			if (records[mid].timestamp < timestamp) lo = mid + 1;
+			else hi = mid;
+		}
+		if (lo > 0 && Math.abs(records[lo - 1].timestamp - timestamp) < Math.abs(records[lo].timestamp - timestamp)) {
+			return records[lo - 1];
+		}
+		return records[lo];
 	}
 
 	onMount(() => {
@@ -63,6 +156,7 @@
 		if (refreshTimer) clearInterval(refreshTimer);
 		if (chart) chart.dispose();
 		if (ro) ro.disconnect();
+		busStore.setHoveredHistoryPoint(null);
 	});
 
 	// (Re)init chart when expanded toggles — chartEl moves to a new DOM element
@@ -98,107 +192,179 @@
 
 	/**
 	 * Resample speed data to a regular 2-second grid with linear interpolation.
-	 * This prevents the chart from drawing misleading straight lines across
-	 * irregular time gaps, and filters brief false-zero blips (<3s).
+	 * Also extracts violation points for scatter markers.
 	 */
 	function resampleForChart(sorted: BusLocation[]): {
 		speeds: [number, number][];
 		limits: [number, number][];
+		violations: [number, number][];
 	} {
 		if (sorted.length < 2) {
 			const t = sorted[0]?.timestamp ?? 0;
+			const s = sorted[0]?.speedKmh ?? 0;
+			const l = sorted[0]?.speedLimitKmh ?? 50;
 			return {
-				speeds: [[t, sorted[0]?.speedKmh ?? 0]],
-				limits: [[t, sorted[0]?.speedLimitKmh ?? 50]],
+				speeds: [[t, s]],
+				limits: [[t, l]],
+				violations: sorted[0]?.isViolation ? [[t, s]] : [],
 			};
 		}
 
 		const firstTs = sorted[0].timestamp;
 		const lastTs = sorted[sorted.length - 1].timestamp;
-		const STEP_MS = 2000; // 2-second grid
+		const STEP_MS = 2000;
 
-		// Filter brief false-zero blips: if speed=0 for <4s between >3 km/h readings, interpolate through
-		const filtered: { t: number; speed: number; limit: number }[] = [];
+		// Filter brief false-zero blips
+		const filtered: { t: number; speed: number; limit: number; violation: boolean }[] = [];
 		for (let i = 0; i < sorted.length; i++) {
 			const s = sorted[i].speedKmh ?? 0;
 			const lim = sorted[i].speedLimitKmh ?? 50;
 			const t = sorted[i].timestamp;
+			const v = sorted[i].isViolation;
 
 			if (s < 0.5 && i > 0 && i < sorted.length - 1) {
-				// Check if this is a brief zero blip
 				const prev = sorted[i - 1];
 				const next = sorted[i + 1];
 				const prevSpeed = prev.speedKmh ?? 0;
 				const nextSpeed = next.speedKmh ?? 0;
 				const gap = next.timestamp - prev.timestamp;
 				if (prevSpeed > 3 && nextSpeed > 3 && gap < 6000) {
-					// Interpolate through
 					const frac = (t - prev.timestamp) / gap;
-					filtered.push({ t, speed: prevSpeed + (nextSpeed - prevSpeed) * frac, limit: lim });
+					filtered.push({ t, speed: prevSpeed + (nextSpeed - prevSpeed) * frac, limit: lim, violation: v });
 					continue;
 				}
 			}
-			filtered.push({ t, speed: s, limit: lim });
+			filtered.push({ t, speed: s, limit: lim, violation: v });
 		}
 
-		// Resample to regular grid using linear interpolation
 		const speeds: [number, number][] = [];
 		const limits: [number, number][] = [];
+		const violations: [number, number][] = [];
 		let srcIdx = 0;
 
 		for (let t = firstTs; t <= lastTs; t += STEP_MS) {
-			// Advance source index to bracket current time
-			while (srcIdx < filtered.length - 1 && filtered[srcIdx + 1].t <= t) {
-				srcIdx++;
-			}
+			while (srcIdx < filtered.length - 1 && filtered[srcIdx + 1].t <= t) srcIdx++;
 
+			let spd: number, limitVal: number, isV: boolean;
 			if (srcIdx >= filtered.length - 1) {
-				// Past end — use last value
-				speeds.push([t, filtered[filtered.length - 1].speed]);
-				limits.push([t, filtered[filtered.length - 1].limit]);
+				spd = filtered[filtered.length - 1].speed;
+				limitVal = filtered[filtered.length - 1].limit;
+				isV = filtered[filtered.length - 1].violation;
 			} else {
 				const a = filtered[srcIdx];
 				const b = filtered[srcIdx + 1];
 				const gap = b.t - a.t;
 				if (gap <= 0) {
-					speeds.push([t, a.speed]);
-					limits.push([t, a.limit]);
+					spd = a.speed; limitVal = a.limit; isV = a.violation;
 				} else {
 					const frac = (t - a.t) / gap;
-					speeds.push([t, a.speed + (b.speed - a.speed) * frac]);
-					limits.push([t, a.limit]); // Step interpolation — limits are discrete, not gradual
+					spd = a.speed + (b.speed - a.speed) * frac;
+					limitVal = a.limit;
+					isV = a.violation || b.violation;
 				}
+			}
+
+			speeds.push([t, spd]);
+			limits.push([t, limitVal]);
+			if (isV) violations.push([t, spd]);
+		}
+
+		return { speeds, limits, violations };
+	}
+
+	function renderChart() {
+		if (!chart || !selectedBus) return;
+		if (history.length === 0) { chart.clear(); return; }
+
+		const { speeds, limits, violations } = resampleForChart(history);
+		const firstTs = history[0].timestamp;
+		const lastTs = history[history.length - 1].timestamp;
+		const totalRange = Math.max(lastTs - firstTs + 4000, 10_000);
+
+		// Calculate visible window
+		let zoomStart: number, zoomEnd: number;
+		if (isAtLiveEdge) {
+			zoomEnd = lastTs + 2000;
+			zoomStart = Math.max(firstTs, zoomEnd - currentWindowMs);
+		} else {
+			// Read current position from chart to preserve user's view
+			const opt = chart.getOption() as any;
+			const dz = opt?.dataZoom?.[0];
+			if (dz?.startValue != null && dz?.endValue != null) {
+				zoomStart = dz.startValue;
+				zoomEnd = dz.endValue;
+			} else {
+				zoomEnd = lastTs + 2000;
+				zoomStart = Math.max(firstTs, zoomEnd - currentWindowMs);
 			}
 		}
 
-		return { speeds, limits };
-	}
+		// Build violation regions (red background shading)
+		const violationRegions: Array<[{ xAxis: number }, { xAxis: number }]> = [];
+		let regionStart: number | null = null;
+		for (let i = 0; i < speeds.length; i++) {
+			const [t, s] = speeds[i];
+			const l = limits[i]?.[1] ?? 50;
+			if (s > l && regionStart === null) {
+				regionStart = t;
+			} else if (s <= l && regionStart !== null) {
+				violationRegions.push([{ xAxis: regionStart }, { xAxis: t }]);
+				regionStart = null;
+			}
+		}
+		if (regionStart !== null) {
+			violationRegions.push([{ xAxis: regionStart }, { xAxis: speeds[speeds.length - 1][0] }]);
+		}
 
-	// Render chart data
-	$effect(() => {
-		if (!chart || !selectedBus) return;
+		// DataZoom: inside only (scroll wheel to zoom in expanded, pan with shift+wheel)
+		const dataZoomConfig: any[] = [
+			{
+				type: 'inside',
+				xAxisIndex: 0,
+				filterMode: 'none',
+				startValue: zoomStart,
+				endValue: zoomEnd,
+				minValueSpan: 10_000,
+				maxValueSpan: totalRange,
+				zoomOnMouseWheel: expanded,
+				moveOnMouseMove: false,
+				moveOnMouseWheel: expanded ? 'shift' : false,
+			},
+		];
 
-		const sorted = [...history].sort((a, b) => a.timestamp - b.timestamp);
-		if (sorted.length === 0) { chart.clear(); return; }
-
-		const { speeds, limits } = resampleForChart(sorted);
-		const firstTs = sorted[0].timestamp;
-
+		isProgrammaticZoom = true;
 		chart.setOption({
 			backgroundColor: 'transparent',
-			grid: { left: 36, right: 12, top: 8, bottom: 24 },
+			grid: {
+				left: 36,
+				right: 12,
+				top: 10,
+				bottom: 24,
+			},
 			tooltip: {
 				trigger: 'axis',
-				backgroundColor: 'rgba(8, 14, 30, 0.9)',
-				borderColor: 'rgba(255,255,255,0.1)',
+				backgroundColor: 'rgba(8, 14, 30, 0.95)',
+				borderColor: 'rgba(255,255,255,0.08)',
 				textStyle: { color: '#f1f5f9', fontSize: 10, fontFamily: 'var(--font-mono)' },
-				formatter: (params: {seriesName: string; value: [number, number]}[]) => {
+				axisPointer: {
+					type: 'line',
+					lineStyle: { color: 'rgba(6, 182, 212, 0.4)', width: 1 },
+				},
+				formatter: (params: { seriesName: string; value: [number, number] }[]) => {
 					if (!Array.isArray(params)) return '';
+					const timestamp = params[0]?.value?.[0];
 					let html = '';
+					if (timestamp) {
+						html += `<div style="color:#94a3b8;margin-bottom:3px;font-size:11px">${formatTime(timestamp)}</div>`;
+					}
 					for (const p of params) {
+						if (p.seriesName === 'Violations' || p.seriesName === 'Now') continue;
 						const color = p.seriesName === 'Speed' ? '#06b6d4' : '#f59e0b';
 						const val = p.value?.[1];
-						html += `<span style="color:${color}">${p.seriesName}: ${val?.toFixed?.(1) ?? '--'}</span><br/>`;
+						html += `<div style="display:flex;align-items:center;gap:4px;margin:1px 0">`;
+						html += `<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${color}"></span>`;
+						html += `<span style="color:${color}">${p.seriesName}: ${val?.toFixed?.(1) ?? '--'} km/h</span>`;
+						html += `</div>`;
 					}
 					return html;
 				},
@@ -206,41 +372,97 @@
 			xAxis: {
 				type: 'value',
 				min: firstTs,
+				max: lastTs + 2000,
 				axisLine: { lineStyle: { color: 'rgba(255,255,255,0.06)' } },
 				splitLine: { show: false },
 				axisLabel: {
-					color: '#64748b', fontSize: 8,
+					color: '#64748b',
+					fontSize: 9,
 					formatter: (v: number) => {
-						const s = Math.round((v - firstTs) / 1000);
-						return s >= 60 ? `${Math.floor(s / 60)}m` : `${s}s`;
+						const time = formatTime(v);
+						// Show HH:MM:SS for windows under 5 min, HH:MM for larger
+						return currentWindowMs < 300_000 ? time : time.slice(0, 5);
 					},
 				},
 			},
 			yAxis: {
-				type: 'value', min: 0,
+				type: 'value',
+				min: 0,
 				splitLine: { lineStyle: { color: 'rgba(255,255,255,0.04)' } },
-				axisLabel: { color: '#64748b', fontSize: 8 },
+				axisLabel: { color: '#64748b', fontSize: 9 },
 			},
+			dataZoom: dataZoomConfig,
 			series: [
 				{
-					name: 'Speed', type: 'line', data: speeds,
-					smooth: 0.3, smoothMonotone: 'x', symbol: 'none',
+					name: 'Speed',
+					type: 'line',
+					data: speeds,
+					smooth: 0.3,
+					smoothMonotone: 'x',
+					symbol: 'none',
 					lineStyle: { color: '#06b6d4', width: 1.5 },
 					areaStyle: {
 						color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-							{ offset: 0, color: 'rgba(6, 182, 212, 0.15)' },
+							{ offset: 0, color: 'rgba(6, 182, 212, 0.18)' },
 							{ offset: 1, color: 'rgba(6, 182, 212, 0)' },
 						]),
 					},
+					markArea: violationRegions.length > 0 ? {
+						silent: true,
+						itemStyle: { color: 'rgba(239, 68, 68, 0.08)' },
+						data: violationRegions,
+					} : { silent: true, data: [] },
 				},
 				{
-					name: 'Limit', type: 'line', data: limits,
-					step: 'end', smooth: false, symbol: 'none',
+					name: 'Limit',
+					type: 'line',
+					data: limits,
+					step: 'end',
+					smooth: false,
+					symbol: 'none',
 					lineStyle: { color: '#f59e0b', width: 1, type: 'dashed' },
 				},
+				{
+					name: 'Violations',
+					type: 'scatter',
+					data: violations,
+					symbol: 'circle',
+					symbolSize: expanded ? 6 : 4,
+					itemStyle: {
+						color: '#ef4444',
+						borderColor: 'rgba(239, 68, 68, 0.4)',
+						borderWidth: 2,
+					},
+					z: 10,
+				},
+				// Live position dot at latest data point
+				{
+					name: 'Now',
+					type: 'scatter',
+					data: speeds.length > 0 ? [speeds[speeds.length - 1]] : [],
+					symbol: 'circle',
+					symbolSize: 8,
+					itemStyle: {
+						color: '#06b6d4',
+						borderColor: 'rgba(6, 182, 212, 0.3)',
+						borderWidth: 4,
+					},
+					z: 20,
+				},
 			],
-			animationDuration: 300,
+			animation: false,
 		});
+		isProgrammaticZoom = false;
+	}
+
+	// Render chart data (reactive)
+	$effect(() => {
+		if (!chart || !selectedBus) return;
+		// Track reactive deps
+		const _len = history.length;
+		const _lastTs = history.length > 0 ? history[history.length - 1].timestamp : 0;
+		const _isLive = isAtLiveEdge;
+		renderChart();
 	});
 </script>
 
@@ -260,6 +482,9 @@
 					<span class="text-xs font-medium text-text-primary leading-tight">{selectedBus.busId}</span>
 					{#if selectedBus.headsign}
 						<span class="text-[9px] text-text-muted leading-tight">{selectedBus.headsign}</span>
+					{/if}
+					{#if selectedBus.speedLimitRoad}
+						<span class="text-[9px] text-text-muted/60 leading-tight">{selectedBus.speedLimitRoad}</span>
 					{/if}
 				</div>
 			</div>
@@ -307,7 +532,7 @@
 						{Math.round(speed)}
 					</text>
 					<text x="50" y="58" text-anchor="middle" fill="rgba(148,163,184,0.5)" font-size="7" font-family="var(--font-sans)">km/h</text>
-					<text x="50" y="74" text-anchor="middle" fill="rgba(148,163,184,0.4)" font-size="7" font-family="var(--font-mono)">limit {limit}</text>
+					<text x="50" y="74" text-anchor="middle" fill="rgba(148,163,184,0.4)" font-size="7" font-family="var(--font-mono)">{selectedBus.speedLimitMatch === 'fallback' ? '~' : ''}limit {limit}</text>
 				</svg>
 			</div>
 			<div class="grid grid-cols-2 gap-x-3 gap-y-1">
@@ -340,6 +565,16 @@
 				onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') expanded = true; }}
 			>
 				<div bind:this={chartEl} class="w-full" style="height: 110px"></div>
+				<!-- Live edge indicator (inline) -->
+				{#if !isAtLiveEdge}
+					<button
+						class="live-badge away"
+						onclick={(e: MouseEvent) => { e.stopPropagation(); jumpToLiveEdge(); }}
+					>
+						<svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor"><path d="M6 4L2 1v6z"/></svg>
+						LIVE
+					</button>
+				{/if}
 				<div class="expand-hint">
 					<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.3">
 						<path d="M1 9V6M1 9H4M1 9L4 6" />
@@ -354,9 +589,33 @@
 	{#if expanded}
 		<div
 			class="fixed bottom-3 right-3 z-10 glass-strong rounded-2xl overflow-hidden"
-			style="left: {chartBarLeft}px; height: 160px; animation: slide-in-up 0.3s cubic-bezier(0.16, 1, 0.3, 1)"
+			style="left: {chartBarLeft}px; height: 200px; animation: slide-in-up 0.3s cubic-bezier(0.16, 1, 0.3, 1)"
 		>
-			<div bind:this={chartEl} class="w-full h-full"></div>
+			<div class="relative w-full h-full">
+				<!-- Chart overlay controls -->
+				<div class="chart-overlay-controls">
+					<!-- Time window presets -->
+					<div class="time-presets">
+						<button class="preset-btn" class:active={currentWindowMs === 30_000 && isAtLiveEdge} onclick={() => setTimeWindow(30_000)}>30s</button>
+						<button class="preset-btn" class:active={currentWindowMs === 60_000 && isAtLiveEdge} onclick={() => setTimeWindow(60_000)}>1m</button>
+						<button class="preset-btn" class:active={currentWindowMs === 300_000 && isAtLiveEdge} onclick={() => setTimeWindow(300_000)}>5m</button>
+						<button class="preset-btn" class:active={currentWindowMs >= 600_000 && isAtLiveEdge} onclick={() => setTimeWindow(Infinity)}>All</button>
+					</div>
+					<!-- Live edge badge -->
+					{#if isAtLiveEdge}
+						<div class="live-badge live">
+							<span class="pulse-dot"></span>
+							LIVE
+						</div>
+					{:else}
+						<button class="live-badge away" onclick={() => jumpToLiveEdge()}>
+							<svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor"><path d="M6 4L2 1v6z"/></svg>
+							LIVE
+						</button>
+					{/if}
+				</div>
+				<div bind:this={chartEl} class="w-full h-full"></div>
+			</div>
 		</div>
 	{/if}
 {/if}
@@ -379,6 +638,107 @@
 	.chart-hover:hover .expand-hint {
 		color: rgba(148, 163, 184, 0.6);
 		transform: scale(1.15);
+	}
+
+	/* Chart overlay controls */
+	.chart-overlay-controls {
+		position: absolute;
+		top: 6px;
+		left: 44px;
+		right: 16px;
+		z-index: 10;
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		pointer-events: none;
+	}
+	.chart-overlay-controls > * {
+		pointer-events: auto;
+	}
+
+	/* Time window presets */
+	.time-presets {
+		display: flex;
+		gap: 2px;
+		background: rgba(15, 23, 42, 0.7);
+		padding: 2px;
+		border-radius: 5px;
+		border: 1px solid rgba(255, 255, 255, 0.05);
+	}
+	.preset-btn {
+		font-size: 9px;
+		font-family: var(--font-mono);
+		font-weight: 500;
+		color: rgba(148, 163, 184, 0.5);
+		background: transparent;
+		border: none;
+		padding: 2px 7px;
+		border-radius: 3px;
+		cursor: pointer;
+		transition: all 0.15s;
+		user-select: none;
+	}
+	.preset-btn:hover {
+		color: rgba(148, 163, 184, 0.8);
+		background: rgba(255, 255, 255, 0.05);
+	}
+	.preset-btn.active {
+		color: #06b6d4;
+		background: rgba(6, 182, 212, 0.1);
+	}
+
+	/* Live badge */
+	.live-badge {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		font-size: 9px;
+		font-weight: 600;
+		font-family: var(--font-mono);
+		letter-spacing: 0.05em;
+		padding: 2px 8px 2px 6px;
+		border-radius: 4px;
+		border: none;
+		user-select: none;
+		transition: all 0.2s;
+	}
+
+	.live-badge.live {
+		color: #10b981;
+		background: rgba(16, 185, 129, 0.1);
+		border: 1px solid rgba(16, 185, 129, 0.15);
+	}
+
+	.live-badge.away {
+		color: rgba(148, 163, 184, 0.6);
+		background: rgba(148, 163, 184, 0.08);
+		border: 1px solid rgba(148, 163, 184, 0.1);
+		cursor: pointer;
+		position: absolute;
+		top: 6px;
+		right: 8px;
+		z-index: 10;
+	}
+	.live-badge.away:hover {
+		color: #06b6d4;
+		background: rgba(6, 182, 212, 0.1);
+		border-color: rgba(6, 182, 212, 0.2);
+	}
+
+	/* Pulsing dot */
+	.pulse-dot {
+		display: inline-block;
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: #10b981;
+		animation: pulse 2s ease-in-out infinite;
+		box-shadow: 0 0 4px rgba(16, 185, 129, 0.6);
+	}
+
+	@keyframes pulse {
+		0%, 100% { opacity: 1; transform: scale(1); }
+		50% { opacity: 0.5; transform: scale(0.8); }
 	}
 
 	@keyframes slide-in-right {
