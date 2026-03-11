@@ -84,6 +84,19 @@
 - **Route 31-B**: Systematic GPS issues with max 1,112.8 km/h impossible speed
 - **0 stuck buses**: All 123 show movement (GPS jitter prevents exact repetition)
 
+## TODO: Speed Limit Match Quality Analysis
+
+Run against the full sample dataset to determine how often we actually match a road segment vs. fall back to the 50 km/h default. Calculate:
+- % of records with `match === 'matched'` vs `match === 'fallback'`
+- Breakdown by route (some routes may leave the Reykjavík road dataset coverage)
+- Whether fallback records cluster geographically (bus terminals, outskirts, etc.)
+
+This tells us how trustworthy our speed limit data actually is across the fleet.
+
+## TODO: Rewrite speed limit download script to Node
+
+The current download script (`tools/download_speed_limits.dart`) requires a Dart runtime. Rewrite as a Node/JS script to match the SvelteKit stack so refreshing speed limit data doesn't require an extra toolchain.
+
 ## Data Collection
 - **Script**: `scripts/collect.mjs`
 - **Method**: Persisted GraphQL query to Straeto API
