@@ -39,13 +39,7 @@ async function connectOrLaunch() {
 			let page = pages.find(p => p.url().includes('localhost:5173'));
 			if (!page) {
 				page = await browser.newPage();
-				await page.setViewport(VIEWPORT);
 				await page.goto(APP_URL, { waitUntil: 'networkidle0', timeout: 15000 });
-			}
-			// Ensure viewport is correct on reconnect
-			const vp = page.viewport();
-			if (!vp || vp.width !== VIEWPORT.width || vp.height !== VIEWPORT.height) {
-				await page.setViewport(VIEWPORT);
 			}
 			return { browser, page };
 		} catch {
@@ -61,7 +55,7 @@ async function connectOrLaunch() {
 	const chromeProc = spawn(CHROME_PATH, [
 		`--remote-debugging-port=${DEBUG_PORT}`,
 		`--user-data-dir=${userDataDir}`,
-		`--window-size=${VIEWPORT.width},${VIEWPORT.height + 140}`,
+		`--window-size=${VIEWPORT.width},${VIEWPORT.height + 100}`,
 		'--window-position=0,25',
 		'--no-first-run',
 		'--no-default-browser-check',
@@ -97,7 +91,6 @@ async function connectOrLaunch() {
 		await page.goto(APP_URL, { waitUntil: 'networkidle0', timeout: 15000 });
 	}
 
-	await page.setViewport(VIEWPORT);
 	return { browser, page };
 }
 
@@ -163,27 +156,60 @@ async function main() {
 			}
 
 			case 'start-collecting': {
-				const buttons = await page.$$('button');
-				for (const b of buttons) {
-					const text = await b.evaluate(el => el.textContent?.trim());
-					if (text === 'Start Collecting') {
-						await b.click();
-						console.log('Started collecting');
-						break;
-					}
-				}
+				const clicked = await page.evaluate(() => {
+					const btn = Array.from(document.querySelectorAll('button'))
+						.find(b => b.textContent?.trim() === 'Start Collecting');
+					if (btn) { btn.click(); return true; }
+					return false;
+				});
+				console.log(clicked ? 'Started collecting' : 'Button not found (already collecting?)');
 				break;
 			}
 
 			case 'stop-collecting': {
-				const buttons = await page.$$('button');
-				for (const b of buttons) {
-					const text = await b.evaluate(el => el.textContent?.trim());
-					if (text === 'Stop Collecting') {
-						await b.click();
-						console.log('Stopped collecting');
-						break;
-					}
+				const clicked = await page.evaluate(() => {
+					const btn = Array.from(document.querySelectorAll('button'))
+						.find(b => b.textContent?.trim() === 'Stop Collecting');
+					if (btn) { btn.click(); return true; }
+					return false;
+				});
+				console.log(clicked ? 'Stopped collecting' : 'Button not found (not collecting?)');
+				break;
+			}
+
+			case 'collect-and-screenshot': {
+				// Compound: start collecting, wait, take screenshot — all in one call
+				const wait = parseInt(args[0]) || 8;
+				const outFile = args[1] || join(SCREENSHOT_DIR, `straeto-${Date.now()}.png`);
+
+				// Start collecting if not already
+				const started = await page.evaluate(() => {
+					const btn = Array.from(document.querySelectorAll('button'))
+						.find(b => b.textContent?.trim() === 'Start Collecting');
+					if (btn) { btn.click(); return true; }
+					return false;
+				});
+				if (started) console.log('Started collecting');
+
+				await new Promise(r => setTimeout(r, wait * 1000));
+				await page.screenshot({ path: outFile, fullPage: false });
+				console.log(outFile);
+				break;
+			}
+
+			case 'switch-mode': {
+				// Switch mode and optionally screenshot
+				const mode = args[0]; // live, playback, stats, heatmap
+				const modeMap = { live: 3, playback: 4, stats: 5, heatmap: 6 };
+				const idx = modeMap[mode];
+				if (idx == null) { console.error('Usage: switch-mode <live|playback|stats|heatmap>'); process.exit(1); }
+				await page.evaluate((i) => document.querySelectorAll('button')[i]?.click(), idx);
+				console.log(`Switched to ${mode}`);
+
+				if (args[1]) {
+					await new Promise(r => setTimeout(r, 1000));
+					await page.screenshot({ path: args[1], fullPage: false });
+					console.log(args[1]);
 				}
 				break;
 			}
