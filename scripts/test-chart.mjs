@@ -5,12 +5,12 @@ const pages = await browser.pages();
 const page = pages[0];
 await page.goto('http://localhost:5173', { waitUntil: 'networkidle2' });
 
-// Click Demo
+// Click Simulate
 await page.$$eval('button', btns => {
-	const b = btns.find(b => b.textContent.trim() === 'Demo');
+	const b = btns.find(b => b.textContent.trim() === 'Simulate');
 	if (b) b.click();
 });
-console.log('Demo started, waiting 20s for data...');
+console.log('Simulation started, waiting 20s for data...');
 await new Promise(r => setTimeout(r, 20000));
 
 // Click a bus marker

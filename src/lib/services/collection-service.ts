@@ -53,8 +53,8 @@ export class CollectionService {
 		}
 	}
 
-	/** Process a single bus location through speed calc + speed limit (for demo replay). */
-	processFixForDemo(bus: BusLocation): BusLocation | null {
+	/** Process a single bus location through speed calc + speed limit (for simulation replay). */
+	processFixForSimulation(bus: BusLocation): BusLocation | null {
 		const withSpeed = this.speedCalculator.processFix(bus);
 		if (!withSpeed) return null;
 

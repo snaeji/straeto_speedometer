@@ -7,10 +7,10 @@ import type { BusLocation } from '$lib/types/bus';
 import { busStore } from './buses.svelte';
 
 class CollectionStore {
-	isCollecting = $state(false);
-	isPreviewing = $state(false);
-	isDemoMode = $state(false);
-	recordsCollected = $state(0);
+	isRecording = $state(false);
+	isMonitoring = $state(false);
+	isSimulating = $state(false);
+	recordsRecorded = $state(0);
 	violationsDetected = $state(0);
 	startedAt = $state<number | null>(null);
 	storageBytes = $state(0);
@@ -18,8 +18,8 @@ class CollectionStore {
 	lastError = $state<string | null>(null);
 
 	private timer: ReturnType<typeof setInterval> | null = null;
-	private previewTimer: ReturnType<typeof setInterval> | null = null;
-	private demoTimer: ReturnType<typeof setInterval> | null = null;
+	private monitorTimer: ReturnType<typeof setInterval> | null = null;
+	private simulateTimer: ReturnType<typeof setInterval> | null = null;
 	collectionService: CollectionService | null = null;
 	storageService: StorageService | null = null;
 
@@ -45,47 +45,47 @@ class CollectionStore {
 		await this.refreshStorageInfo();
 	}
 
-	async startCollecting() {
-		if (this.isCollecting || !this.collectionService || !this.storageService) return;
+	async startRecording() {
+		if (this.isRecording || !this.collectionService || !this.storageService) return;
 
-		this.isCollecting = true;
+		this.isRecording = true;
 		this.startedAt = Date.now();
 		this.lastError = null;
 
-		// Stop preview if running
-		this.stopPreviewing();
+		// Stop monitoring if running
+		this.stopMonitoring();
 
 		// Collect immediately, then on interval
-		await this.collectAndStore();
-		this.timer = setInterval(() => this.collectAndStore(), POLLING_INTERVAL_MS);
+		await this.recordAndStore();
+		this.timer = setInterval(() => this.recordAndStore(), POLLING_INTERVAL_MS);
 	}
 
-	stopCollecting() {
+	stopRecording() {
 		if (this.timer) {
 			clearInterval(this.timer);
 			this.timer = null;
 		}
-		this.isCollecting = false;
+		this.isRecording = false;
 	}
 
-	async startPreviewing() {
-		if (this.isPreviewing || this.isCollecting || !this.collectionService) return;
-		this.isPreviewing = true;
+	async startMonitoring() {
+		if (this.isMonitoring || this.isRecording || !this.collectionService) return;
+		this.isMonitoring = true;
 		this.lastError = null;
 
-		await this.previewOnce();
-		this.previewTimer = setInterval(() => this.previewOnce(), POLLING_INTERVAL_MS);
+		await this.monitorOnce();
+		this.monitorTimer = setInterval(() => this.monitorOnce(), POLLING_INTERVAL_MS);
 	}
 
-	stopPreviewing() {
-		if (this.previewTimer) {
-			clearInterval(this.previewTimer);
-			this.previewTimer = null;
+	stopMonitoring() {
+		if (this.monitorTimer) {
+			clearInterval(this.monitorTimer);
+			this.monitorTimer = null;
 		}
-		this.isPreviewing = false;
+		this.isMonitoring = false;
 	}
 
-	private async previewOnce() {
+	private async monitorOnce() {
 		if (!this.collectionService) return;
 		const locations = await this.collectionService.collectOnce();
 		if (locations && locations.length > 0) {
@@ -93,7 +93,7 @@ class CollectionStore {
 		}
 	}
 
-	private async collectAndStore() {
+	private async recordAndStore() {
 		if (!this.collectionService || !this.storageService) return;
 
 		const locations = await this.collectionService.collectOnce();
@@ -111,7 +111,7 @@ class CollectionStore {
 			// Store to IndexedDB
 			await this.storageService.storeBatch(locations);
 
-			this.recordsCollected += locations.length;
+			this.recordsRecorded += locations.length;
 			this.violationsDetected += locations.filter((l) => l.isViolation).length;
 		}
 
@@ -134,17 +134,17 @@ class CollectionStore {
 	async clearData() {
 		if (!this.storageService) return;
 		await this.storageService.clearAll();
-		this.recordsCollected = 0;
+		this.recordsRecorded = 0;
 		this.violationsDetected = 0;
 		await this.refreshStorageInfo();
 	}
 
-	async startDemoMode() {
-		if (this.isDemoMode) return;
-		this.stopCollecting();
-		this.stopPreviewing();
+	async startSimulation() {
+		if (this.isSimulating) return;
+		this.stopRecording();
+		this.stopMonitoring();
 
-		this.isDemoMode = true;
+		this.isSimulating = true;
 		this.startedAt = Date.now();
 		this.lastError = null;
 		resetMockData();
@@ -161,7 +161,7 @@ class CollectionStore {
 			if (this.collectionService) {
 				const processed: BusLocation[] = [];
 				for (const bus of locations) {
-					const withSpeed = this.collectionService.processFixForDemo(bus);
+					const withSpeed = this.collectionService.processFixForSimulation(bus);
 					if (withSpeed) {
 						processed.push(withSpeed);
 					}
@@ -170,25 +170,25 @@ class CollectionStore {
 			}
 
 			busStore.updateBuses(locations, true);
-			this.recordsCollected += locations.length;
+			this.recordsRecorded += locations.length;
 			this.violationsDetected += locations.filter((l) => l.isViolation).length;
 		};
 		tick();
-		this.demoTimer = setInterval(tick, POLLING_INTERVAL_MS);
+		this.simulateTimer = setInterval(tick, POLLING_INTERVAL_MS);
 	}
 
-	stopDemoMode() {
-		if (this.demoTimer) {
-			clearInterval(this.demoTimer);
-			this.demoTimer = null;
+	stopSimulation() {
+		if (this.simulateTimer) {
+			clearInterval(this.simulateTimer);
+			this.simulateTimer = null;
 		}
-		this.isDemoMode = false;
+		this.isSimulating = false;
 	}
 
 	destroy() {
-		this.stopCollecting();
-		this.stopPreviewing();
-		this.stopDemoMode();
+		this.stopRecording();
+		this.stopMonitoring();
+		this.stopSimulation();
 	}
 }
 

@@ -7,7 +7,7 @@
 <div class="flex flex-col h-full p-4">
 	<h2 class="text-sm font-semibold text-text-primary mb-2 text-glow">Violation Heatmap</h2>
 	<p class="text-xs text-text-secondary mb-3">
-		Shows areas with highest concentration of speed violations. Start collecting data to see the heatmap build up.
+		Shows areas with highest concentration of speed violations. Start recording data to see the heatmap build up.
 	</p>
 
 	<!-- Instructions -->
@@ -16,7 +16,7 @@
 		<ul class="text-[11px] text-text-secondary space-y-1">
 			<li class="flex items-start gap-1.5">
 				<span class="text-accent mt-0.5 shrink-0">&#x2022;</span>
-				<span>Enable data collection to begin recording violations</span>
+				<span>Start recording to begin tracking violations</span>
 			</li>
 			<li class="flex items-start gap-1.5">
 				<span class="text-accent mt-0.5 shrink-0">&#x2022;</span>

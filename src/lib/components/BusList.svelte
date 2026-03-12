@@ -49,7 +49,7 @@
 		</div>
 		<p class="text-sm text-text-secondary text-center font-medium">No active buses</p>
 		<p class="text-xs text-text-muted text-center mt-1.5 max-w-[200px] leading-relaxed">
-			Click "Start Collecting" to record data, or "Preview" to see live positions
+			Click "Start Recording" to record data, or "Monitor" to see live positions
 		</p>
 	</div>
 {:else}

@@ -46,7 +46,7 @@ class StatsStore {
 	async computeStats() {
 		if (this.isComputing) return;
 
-		// Use live history if available (demo/preview mode), otherwise try stored data
+		// Use live history if available (simulation/monitor mode), otherwise try stored data
 		if (busStore.liveHistory.length > 0) {
 			this.computeFromArray(busStore.liveHistory);
 		} else {

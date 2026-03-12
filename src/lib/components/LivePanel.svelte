@@ -50,7 +50,7 @@
 	let elapsedTimer: ReturnType<typeof setInterval> | null = null;
 
 	$effect(() => {
-		if (collectionStore.isCollecting || collectionStore.isDemoMode) {
+		if (collectionStore.isRecording || collectionStore.isSimulating) {
 			elapsedTimer = setInterval(() => {
 				elapsedDisplay = formatElapsed(collectionStore.elapsedSeconds);
 			}, 1000);
@@ -65,59 +65,59 @@
 </script>
 
 <div class="flex flex-col h-full">
-	<!-- Collection Controls -->
+	<!-- Recording Controls -->
 	<div class="p-4 border-b border-white/5">
-		<h3 class="text-[11px] font-semibold uppercase tracking-wider text-text-muted mb-3">Data Collection</h3>
+		<h3 class="text-[11px] font-semibold uppercase tracking-wider text-text-muted mb-3">Data Recording</h3>
 		<div class="flex gap-2 mb-3">
-			{#if collectionStore.isCollecting}
+			{#if collectionStore.isRecording}
 				<button
 					class="flex-1 py-2 rounded-xl bg-danger/15 text-danger border border-danger/20 text-xs font-medium hover:bg-danger/25 transition-all cursor-pointer"
-					onclick={() => collectionStore.stopCollecting()}
+					onclick={() => collectionStore.stopRecording()}
 				>
-					Stop Collecting
+					Stop Recording
 				</button>
-			{:else if collectionStore.isDemoMode}
+			{:else if collectionStore.isSimulating}
 				<button
 					class="flex-1 py-2 rounded-xl bg-warning/15 text-warning border border-warning/20 text-xs font-medium hover:bg-warning/25 transition-all cursor-pointer"
-					onclick={() => collectionStore.stopDemoMode()}
+					onclick={() => collectionStore.stopSimulation()}
 				>
-					Stop Demo
+					Stop Simulation
 				</button>
 			{:else}
 				<button
 					class="flex-1 py-2 rounded-xl bg-success/15 text-success border border-success/20 text-xs font-medium hover:bg-success/25 transition-all cursor-pointer"
-					onclick={() => collectionStore.startCollecting()}
+					onclick={() => collectionStore.startRecording()}
 				>
-					Start Collecting
+					Start Recording
 				</button>
 			{/if}
 
-			{#if !collectionStore.isCollecting && !collectionStore.isDemoMode}
+			{#if !collectionStore.isRecording && !collectionStore.isSimulating}
 				<button
 					class="py-2 px-3 rounded-xl text-xs font-medium transition-all cursor-pointer
-						{collectionStore.isPreviewing
+						{collectionStore.isMonitoring
 							? 'bg-accent/15 text-accent border border-accent/20'
 							: 'bg-white/[0.03] text-text-secondary border border-white/[0.06] hover:border-white/[0.1]'}"
 					onclick={() =>
-						collectionStore.isPreviewing
-							? collectionStore.stopPreviewing()
-							: collectionStore.startPreviewing()}
-					title="Preview live data without storing"
+						collectionStore.isMonitoring
+							? collectionStore.stopMonitoring()
+							: collectionStore.startMonitoring()}
+					title="Monitor live data without storing"
 				>
-					{collectionStore.isPreviewing ? 'Stop Preview' : 'Preview'}
+					{collectionStore.isMonitoring ? 'Stop Monitoring' : 'Monitor'}
 				</button>
 				<button
 					class="py-2 px-3 rounded-xl text-xs font-medium transition-all cursor-pointer bg-warning/[0.08] text-warning/80 border border-warning/15 hover:bg-warning/15 hover:text-warning"
-					onclick={() => collectionStore.startDemoMode()}
+					onclick={() => collectionStore.startSimulation()}
 					title="Simulated bus data for testing"
 				>
-					Demo
+					Simulate
 				</button>
 			{/if}
 		</div>
 
-		<!-- Collection Stats -->
-		{#if collectionStore.isCollecting || collectionStore.isDemoMode}
+		<!-- Recording Stats -->
+		{#if collectionStore.isRecording || collectionStore.isSimulating}
 			<div class="grid grid-cols-3 gap-2 mb-3">
 				<div class="bg-white/[0.02] rounded-lg px-2 py-1.5">
 					<div class="text-[10px] text-text-muted uppercase">Time</div>
@@ -125,7 +125,7 @@
 				</div>
 				<div class="bg-white/[0.02] rounded-lg px-2 py-1.5">
 					<div class="text-[10px] text-text-muted uppercase">Records</div>
-					<div class="text-xs font-mono text-text-primary">{collectionStore.recordsCollected.toLocaleString()}</div>
+					<div class="text-xs font-mono text-text-primary">{collectionStore.recordsRecorded.toLocaleString()}</div>
 				</div>
 				<div class="bg-white/[0.02] rounded-lg px-2 py-1.5">
 					<div class="text-[10px] text-text-muted uppercase">Violations</div>

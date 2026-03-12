@@ -7,8 +7,8 @@
  *   node scripts/browser.mjs click <selector>      — click an element
  *   node scripts/browser.mjs eval <js>             — run JS in page, print result
  *   node scripts/browser.mjs wait <selector>       — wait for element to appear
- *   node scripts/browser.mjs start-collecting      — click Start Collecting button
- *   node scripts/browser.mjs stop-collecting       — click Stop Collecting button
+ *   node scripts/browser.mjs start-recording       — click Start Recording button
+ *   node scripts/browser.mjs stop-recording        — click Stop Recording button
  *   node scripts/browser.mjs reset                 — kill old browser session, start fresh
  *
  * The script connects to the running dev server at localhost:5173.
@@ -99,7 +99,7 @@ async function main() {
 
 	if (!cmd) {
 		console.log('Usage: node scripts/browser.mjs <command> [args]');
-		console.log('Commands: screenshot, click, eval, wait, start-collecting, stop-collecting, reset');
+		console.log('Commands: screenshot, click, eval, wait, start-recording, stop-recording, reset');
 		process.exit(0);
 	}
 
@@ -155,41 +155,41 @@ async function main() {
 				break;
 			}
 
-			case 'start-collecting': {
+			case 'start-recording': {
 				const clicked = await page.evaluate(() => {
 					const btn = Array.from(document.querySelectorAll('button'))
-						.find(b => b.textContent?.trim() === 'Start Collecting');
+						.find(b => b.textContent?.trim() === 'Start Recording');
 					if (btn) { btn.click(); return true; }
 					return false;
 				});
-				console.log(clicked ? 'Started collecting' : 'Button not found (already collecting?)');
+				console.log(clicked ? 'Started recording' : 'Button not found (already recording?)');
 				break;
 			}
 
-			case 'stop-collecting': {
+			case 'stop-recording': {
 				const clicked = await page.evaluate(() => {
 					const btn = Array.from(document.querySelectorAll('button'))
-						.find(b => b.textContent?.trim() === 'Stop Collecting');
+						.find(b => b.textContent?.trim() === 'Stop Recording');
 					if (btn) { btn.click(); return true; }
 					return false;
 				});
-				console.log(clicked ? 'Stopped collecting' : 'Button not found (not collecting?)');
+				console.log(clicked ? 'Stopped recording' : 'Button not found (not recording?)');
 				break;
 			}
 
-			case 'collect-and-screenshot': {
-				// Compound: start collecting, wait, take screenshot — all in one call
+			case 'record-and-screenshot': {
+				// Compound: start recording, wait, take screenshot — all in one call
 				const wait = parseInt(args[0]) || 8;
 				const outFile = args[1] || join(SCREENSHOT_DIR, `straeto-${Date.now()}.png`);
 
-				// Start collecting if not already
+				// Start recording if not already
 				const started = await page.evaluate(() => {
 					const btn = Array.from(document.querySelectorAll('button'))
-						.find(b => b.textContent?.trim() === 'Start Collecting');
+						.find(b => b.textContent?.trim() === 'Start Recording');
 					if (btn) { btn.click(); return true; }
 					return false;
 				});
-				if (started) console.log('Started collecting');
+				if (started) console.log('Started recording');
 
 				await new Promise(r => setTimeout(r, wait * 1000));
 				await page.screenshot({ path: outFile, fullPage: false });

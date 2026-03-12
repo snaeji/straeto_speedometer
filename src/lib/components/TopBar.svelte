@@ -33,7 +33,7 @@
 				</svg>
 			</div>
 			<span class="text-sm font-semibold tracking-wider text-text-primary">THE STRAETO SPEEDOMETER</span>
-			{#if collectionStore.isCollecting || collectionStore.isPreviewing || collectionStore.isDemoMode}
+			{#if collectionStore.isRecording || collectionStore.isMonitoring || collectionStore.isSimulating}
 				<div class="relative flex items-center">
 					<div class="w-2 h-2 rounded-full bg-success"></div>
 					<div class="absolute w-2 h-2 rounded-full bg-success animate-pulse-ring"></div>

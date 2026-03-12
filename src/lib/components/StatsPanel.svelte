@@ -266,7 +266,7 @@
 	{:else if !hasData}
 		<div class="flex flex-col items-center justify-center py-12 px-4">
 			<p class="text-xs text-text-muted text-center">No data available</p>
-			<p class="text-[10px] text-text-muted/60 text-center mt-1">Collect or import data first</p>
+			<p class="text-[10px] text-text-muted/60 text-center mt-1">Record or import data first</p>
 		</div>
 	{/if}
 
