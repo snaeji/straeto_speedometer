@@ -1,10 +1,13 @@
 import type { AppMode } from '$lib/types/bus';
+import type { GtfsService } from '$lib/services/gtfs-service';
 
 class AppStore {
 	mode = $state<AppMode>('live');
 	sidebarOpen = $state(true);
 	speedLimitGeoJson = $state<object | null>(null);
 	speedLimitsLoaded = $state(false);
+	gtfsService = $state<GtfsService | null>(null);
+	gtfsLoaded = $state(false);
 
 	toggleSidebar() {
 		this.sidebarOpen = !this.sidebarOpen;

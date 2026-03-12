@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { SpeedLimitService } from '$lib/services/speed-limit-service';
+	import { GtfsService } from '$lib/services/gtfs-service';
 	import { StorageService } from '$lib/services/storage-service';
 	import { appStore } from '$lib/stores/app.svelte';
 	import { collectionStore } from '$lib/stores/collection.svelte';
@@ -16,6 +17,7 @@
 	let error = $state<string | null>(null);
 
 	const speedLimitService = new SpeedLimitService();
+	const gtfsService = new GtfsService();
 	const storageService = new StorageService();
 
 	onMount(async () => {
@@ -29,14 +31,22 @@
 			speedLimitService.loadFromGeoJson(geoJson);
 			appStore.speedLimitGeoJson = geoJson;
 			appStore.speedLimitsLoaded = true;
-			loadingProgress = 50;
+			loadingProgress = 35;
 
-			// Step 2: Open IndexedDB
+			// Step 2: Load GTFS data
+			loadingMessage = 'Loading route data';
+			loadingProgress = 40;
+			await gtfsService.load(`${base}/gtfs`);
+			appStore.gtfsService = gtfsService;
+			appStore.gtfsLoaded = true;
+			loadingProgress = 55;
+
+			// Step 3: Open IndexedDB
 			loadingMessage = 'Opening database';
 			loadingProgress = 65;
 			await storageService.open();
 
-			// Step 3: Initialize stores
+			// Step 4: Initialize stores
 			loadingMessage = 'Starting services';
 			loadingProgress = 80;
 			await collectionStore.init(speedLimitService, storageService);

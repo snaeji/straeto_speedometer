@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import maplibregl from 'maplibre-gl';
+	import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-csp-worker.js?url';
+	maplibregl.setWorkerUrl(maplibreWorkerUrl);
 	import { busStore, getBusStatus, getStatusColor } from '$lib/stores/buses.svelte';
 	import { appStore } from '$lib/stores/app.svelte';
 	import { collectionStore } from '$lib/stores/collection.svelte';
@@ -86,7 +88,6 @@
 					type: 'geojson',
 					data: appStore.speedLimitGeoJson as GeoJSON.FeatureCollection,
 				});
-
 				map.addLayer({
 					id: 'speed-limit-lines',
 					type: 'line',
@@ -308,7 +309,7 @@
 			const color = getStatusColor(status);
 			const isSelected = bus.busId === busStore.selectedBusId;
 
-			// Update trail history
+			// Update trail history using Kalman-smoothed positions (raw GPS is quantized into a grid)
 			let trail = busTrails.get(bus.busId);
 			if (!trail) {
 				trail = [];
@@ -316,7 +317,14 @@
 			}
 			const lastPoint = trail[trail.length - 1];
 			if (!lastPoint || lastPoint.lng !== bus.lng || lastPoint.lat !== bus.lat) {
-				trail.push({ lng: bus.lng, lat: bus.lat, ts: now });
+				let trailLng = bus.lng;
+				let trailLat = bus.lat;
+				const trailCalc = collectionStore.speedCalculator;
+				if (trailCalc) {
+					const pred = trailCalc.getPredictedPosition(bus.busId, now);
+					if (pred) { trailLng = pred.lng; trailLat = pred.lat; }
+				}
+				trail.push({ lng: trailLng, lat: trailLat, ts: now });
 				// Prune old points
 				while (trail.length > TRAIL_MAX_POINTS) trail.shift();
 				while (trail.length > 0 && now - trail[0].ts > TRAIL_MAX_AGE_MS) trail.shift();
@@ -474,30 +482,24 @@
 		if (!source) return;
 
 		const features: GeoJSON.Feature[] = [];
-		for (const bus of buses) {
-			const trail = busTrails.get(bus.busId);
-			if (!trail || trail.length < 2) continue;
-
-			const status = getBusStatus(bus);
-			const color = getStatusColor(status);
-			const isSelected = bus.busId === busStore.selectedBusId;
-
-			// Create line segments with decreasing opacity
-			// Selected bus gets brighter, thicker trails
-			for (let i = 1; i < trail.length; i++) {
-				const baseOpacity = isSelected ? 0.7 : 0.4;
-				const opacity = (i / trail.length) * baseOpacity;
-				features.push({
-					type: 'Feature',
-					geometry: {
-						type: 'LineString',
-						coordinates: [
-							[trail[i - 1].lng, trail[i - 1].lat],
-							[trail[i].lng, trail[i].lat],
-						],
-					},
-					properties: { color: isSelected ? '#06b6d4' : color, opacity },
-				});
+		const selectedId = busStore.selectedBusId;
+		if (selectedId) {
+			const trail = busTrails.get(selectedId);
+			if (trail && trail.length >= 2) {
+				for (let i = 1; i < trail.length; i++) {
+					const opacity = (i / trail.length) * 0.7;
+					features.push({
+						type: 'Feature',
+						geometry: {
+							type: 'LineString',
+							coordinates: [
+								[trail[i - 1].lng, trail[i - 1].lat],
+								[trail[i].lng, trail[i].lat],
+							],
+						},
+						properties: { color: '#06b6d4', opacity },
+					});
+				}
 			}
 		}
 
