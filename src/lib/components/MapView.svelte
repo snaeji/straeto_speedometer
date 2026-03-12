@@ -221,7 +221,7 @@
 		resizeObserver.observe(mapContainer);
 	});
 
-	// Animation loop: Kalman-predicted positions at 60fps
+	// Animation loop: Kalman-predicted positions at 60fps + camera follow
 	function startAnimLoop() {
 		function tick() {
 			const now = Date.now();
@@ -236,6 +236,21 @@
 				}
 				// Fallback: position already set from bus store data
 			}
+
+			// Smoothly follow selected bus at 60fps
+			if (map && busStore.autoFollow && busStore.selectedBusId) {
+				const entry = markers.get(busStore.selectedBusId);
+				if (entry) {
+					const pos = entry.marker.getLngLat();
+					const center = map.getCenter();
+					// Lerp the camera toward the marker to avoid jarring jumps
+					const t = 0.08;
+					const lng = center.lng + (pos.lng - center.lng) * t;
+					const lat = center.lat + (pos.lat - center.lat) * t;
+					map.setCenter([lng, lat]);
+				}
+			}
+
 			animFrameId = requestAnimationFrame(tick);
 		}
 		animFrameId = requestAnimationFrame(tick);
@@ -341,15 +356,23 @@
 
 		// Detect new violations, spawn shockwaves, accumulate heatmap
 		const newViolators = new Set<string>();
+		const calc = collectionStore.speedCalculator;
 		for (const bus of currentBuses) {
 			if (bus.isViolation) {
 				newViolators.add(bus.busId);
+				// Use Kalman-predicted position so shockwave appears at the marker
+				let lng = bus.lng;
+				let lat = bus.lat;
+				if (calc) {
+					const pred = calc.getPredictedPosition(bus.busId, Date.now());
+					if (pred) { lng = pred.lng; lat = pred.lat; }
+				}
 				if (!knownViolators.has(bus.busId)) {
-					spawnShockwave(bus.lng, bus.lat);
+					spawnShockwave(lng, lat);
 				}
 				// Accumulate for heatmap
 				const excess = (bus.speedKmh ?? 0) - (bus.speedLimitKmh ?? 50);
-				heatmapPoints.push({ lng: bus.lng, lat: bus.lat, weight: Math.max(1, excess / 10) });
+				heatmapPoints.push({ lng, lat, weight: Math.max(1, excess / 10) });
 				if (heatmapPoints.length > HEATMAP_MAX_POINTS) {
 					heatmapPoints = heatmapPoints.slice(-HEATMAP_MAX_POINTS);
 				}
@@ -361,13 +384,25 @@
 		updateTrailLines(currentBuses);
 	});
 
-	// Auto-follow selected bus
+	// Snap camera to bus on initial selection
+	let lastFollowedBusId: string | null = null;
 	$effect(() => {
-		if (!map || !busStore.autoFollow || !busStore.selectedBusId) return;
-		const bus = busStore.selectedBus;
-		if (bus) {
-			map.easeTo({ center: [bus.lng, bus.lat], duration: 500 });
+		const busId = busStore.selectedBusId;
+		if (!map || !busId || busId === lastFollowedBusId) return;
+		lastFollowedBusId = busId;
+		// Snap to the marker's current position immediately
+		const entry = markers.get(busId);
+		if (entry) {
+			const pos = entry.marker.getLngLat();
+			map.easeTo({ center: [pos.lng, pos.lat], duration: 300 });
+		} else {
+			const bus = busStore.selectedBus;
+			if (bus) map.easeTo({ center: [bus.lng, bus.lat], duration: 300 });
 		}
+	});
+	// Reset tracking when deselected
+	$effect(() => {
+		if (!busStore.selectedBusId) lastFollowedBusId = null;
 	});
 
 	// Toggle heatmap layer visibility
