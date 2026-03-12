@@ -86,6 +86,11 @@ export class StorageService {
 	}
 
 	async getStorageEstimate(): Promise<number> {
+		// navigator.storage.estimate() reports the entire origin's allocated
+		// bytes, which doesn't drop immediately after clearing an IndexedDB store.
+		// Return 0 when there are no records to avoid showing stale size.
+		const count = await this.getRecordCount();
+		if (count === 0) return 0;
 		if ('storage' in navigator && 'estimate' in navigator.storage) {
 			const estimate = await navigator.storage.estimate();
 			return estimate.usage ?? 0;

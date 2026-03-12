@@ -4,6 +4,18 @@
 	import type { PlaybackSpeed } from '$lib/types/bus';
 
 	const speeds: PlaybackSpeed[] = [1, 2, 5, 10];
+
+	const playClass = $derived(playbackStore.isPlaying
+		? 'bg-accent/15 text-accent border border-accent/20'
+		: 'bg-white/5 text-text-primary border border-white/10 hover:bg-white/10');
+
+	function speedClass(s: PlaybackSpeed) {
+		return playbackStore.speed === s
+			? 'bg-accent/15 text-accent border border-accent/20'
+			: 'text-text-muted hover:text-text-secondary border border-transparent';
+	}
+
+	const sliderBg = $derived(`background: linear-gradient(90deg, rgba(6,182,212,0.4) ${playbackStore.progress * 100}%, rgba(255,255,255,0.06) ${playbackStore.progress * 100}%)`);
 </script>
 
 {#if !playbackStore.hasData}
@@ -12,7 +24,7 @@
 		<circle cx="12" cy="12" r="10" />
 		<path d="M12 8v4M12 16h.01" />
 	</svg>
-	<span class="text-xs text-text-secondary">No recorded data. Collect or import data to use playback.</span>
+	<span class="text-xs text-text-secondary">No recorded data. Record or import data to use playback.</span>
 </div>
 {:else}
 <div class="glass-strong rounded-2xl px-5 py-3 flex items-center gap-4">
@@ -29,10 +41,7 @@
 		</button>
 
 		<button
-			class="w-10 h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer
-				{playbackStore.isPlaying
-					? 'bg-accent/15 text-accent border border-accent/20'
-					: 'bg-white/5 text-text-primary border border-white/10 hover:bg-white/10'}"
+			class="w-10 h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer {playClass}"
 			onclick={() => (playbackStore.isPlaying ? playbackStore.pause() : playbackStore.play())}
 			title="Play/Pause (Space)"
 		>
@@ -62,10 +71,7 @@
 	<div class="flex items-center gap-0.5 shrink-0 bg-white/[0.02] rounded-lg p-0.5 border border-white/[0.04]">
 		{#each speeds as s}
 			<button
-				class="px-2 py-1 rounded-md text-[10px] font-mono font-medium transition-all cursor-pointer
-					{playbackStore.speed === s
-						? 'bg-accent/15 text-accent border border-accent/20'
-						: 'text-text-muted hover:text-text-secondary border border-transparent'}"
+				class="px-2 py-1 rounded-md text-[10px] font-mono font-medium transition-all cursor-pointer {speedClass(s)}"
 				onclick={() => playbackStore.setSpeed(s)}
 			>
 				{s}x
@@ -82,7 +88,7 @@
 			value={playbackStore.currentTimestamp}
 			oninput={(e) => playbackStore.seekTo(Number((e.target as HTMLInputElement).value))}
 			class="w-full h-1.5 rounded-full appearance-none cursor-pointer"
-			style="background: linear-gradient(90deg, rgba(6,182,212,0.4) {playbackStore.progress * 100}%, rgba(255,255,255,0.06) {playbackStore.progress * 100}%)"
+			style={sliderBg}
 		/>
 		<div class="flex justify-between text-[10px] text-text-muted font-mono">
 			<span>{formatDate(playbackStore.startTimestamp)} {formatTime(playbackStore.startTimestamp)}</span>
