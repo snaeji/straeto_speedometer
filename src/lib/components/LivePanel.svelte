@@ -69,6 +69,7 @@
 	<div class="p-4 border-b border-white/5">
 		<h3 class="text-[11px] font-semibold uppercase tracking-wider text-text-muted mb-3">Data Recording</h3>
 		<div class="flex gap-2 mb-3">
+			<!-- Primary action button -->
 			{#if collectionStore.isRecording}
 				<button
 					class="flex-1 py-2 rounded-xl bg-danger/15 text-danger border border-danger/20 text-xs font-medium hover:bg-danger/25 transition-all cursor-pointer"
@@ -83,6 +84,13 @@
 				>
 					Stop Simulation
 				</button>
+			{:else if collectionStore.isMonitoring}
+				<button
+					class="flex-1 py-2 rounded-xl bg-accent/15 text-accent border border-accent/20 text-xs font-medium hover:bg-accent/25 transition-all cursor-pointer"
+					onclick={() => collectionStore.stopMonitoring()}
+				>
+					Stop Monitoring
+				</button>
 			{:else}
 				<button
 					class="flex-1 py-2 rounded-xl bg-success/15 text-success border border-success/20 text-xs font-medium hover:bg-success/25 transition-all cursor-pointer"
@@ -92,22 +100,17 @@
 				</button>
 			{/if}
 
-			{#if !collectionStore.isRecording && !collectionStore.isSimulating}
+			<!-- Secondary toggles: only show when idle -->
+			{#if !collectionStore.isRecording && !collectionStore.isSimulating && !collectionStore.isMonitoring}
 				<button
-					class="py-2 px-3 rounded-xl text-xs font-medium transition-all cursor-pointer
-						{collectionStore.isMonitoring
-							? 'bg-accent/15 text-accent border border-accent/20'
-							: 'bg-white/[0.03] text-text-secondary border border-white/[0.06] hover:border-white/[0.1]'}"
-					onclick={() =>
-						collectionStore.isMonitoring
-							? collectionStore.stopMonitoring()
-							: collectionStore.startMonitoring()}
-					title="Monitor live data without storing"
+					class="py-2 px-3 rounded-xl text-xs font-medium transition-all cursor-pointer bg-white/[0.03] text-text-secondary border border-white/[0.06] hover:border-white/[0.1] hover:text-text-primary"
+					onclick={() => collectionStore.startMonitoring()}
+					title="Watch live bus positions without saving data"
 				>
-					{collectionStore.isMonitoring ? 'Stop Monitoring' : 'Monitor'}
+					Monitor
 				</button>
 				<button
-					class="py-2 px-3 rounded-xl text-xs font-medium transition-all cursor-pointer bg-warning/[0.08] text-warning/80 border border-warning/15 hover:bg-warning/15 hover:text-warning"
+					class="py-2 px-3 rounded-xl text-xs font-medium transition-all cursor-pointer bg-white/[0.03] text-warning/70 border border-white/[0.06] hover:border-warning/20 hover:text-warning"
 					onclick={() => collectionStore.startSimulation()}
 					title="Simulated bus data for testing"
 				>
@@ -140,8 +143,8 @@
 			</div>
 		{/if}
 
-		<!-- Import / Export / Storage -->
-		<div class="flex items-center gap-1.5 text-xs flex-wrap">
+		<!-- Import / Export / Clear -->
+		<div class="flex items-center gap-1.5 text-xs">
 			<input bind:this={importInput} type="file" accept=".jsonl" multiple class="hidden" onchange={handleImport} />
 			<button
 				class="px-2.5 py-1.5 rounded-lg bg-white/[0.03] text-text-secondary border border-white/[0.06] hover:border-white/[0.1] transition-all cursor-pointer"
@@ -160,9 +163,7 @@
 				</button>
 			{/if}
 
-			<div class="flex-1 text-right text-text-muted font-mono text-[10px]">
-				{collectionStore.recordCount.toLocaleString()} rec &middot; {formatBytes(collectionStore.storageBytes)}
-			</div>
+			<div class="flex-1"></div>
 
 			{#if collectionStore.recordCount > 0}
 				{#if showClearConfirm}
@@ -183,6 +184,13 @@
 				{/if}
 			{/if}
 		</div>
+
+		<!-- Storage stats -->
+		{#if collectionStore.recordCount > 0}
+			<div class="text-text-muted font-mono text-[10px] mt-1.5">
+				{collectionStore.recordCount.toLocaleString()} records &middot; {formatBytes(collectionStore.storageBytes)}
+			</div>
+		{/if}
 	</div>
 
 	<!-- Bus List -->
