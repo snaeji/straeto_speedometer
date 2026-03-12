@@ -3,6 +3,7 @@
 
 	let flashActive = $state(false);
 	let prevViolationIds = new Set<string>();
+	let flashTimeout: ReturnType<typeof setTimeout> | null = null;
 
 	// Detect new violations by comparing current violating bus IDs
 	$effect(() => {
@@ -22,8 +23,11 @@
 
 		if (hasNew && currentViolations.length > 0) {
 			flashActive = true;
-			setTimeout(() => { flashActive = false; }, 600);
+			if (flashTimeout) clearTimeout(flashTimeout);
+			flashTimeout = setTimeout(() => { flashActive = false; }, 600);
 		}
+
+		return () => { if (flashTimeout) clearTimeout(flashTimeout); };
 	});
 </script>
 

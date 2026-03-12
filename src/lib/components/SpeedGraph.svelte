@@ -96,14 +96,12 @@
 			const pointInPixel = [e.offsetX, e.offsetY];
 			if (chart!.containPixel('grid', pointInPixel)) {
 				const xVal = chart!.convertFromPixel({ xAxisIndex: 0 }, pointInPixel)[0];
-				const closest = findClosestRecord(history, xVal);
-				if (closest && closest.timestamp !== lastHoveredTs) {
-					lastHoveredTs = closest.timestamp;
-					busStore.setHoveredHistoryPoint({
-						lat: closest.lat, lng: closest.lng,
-						timestamp: closest.timestamp,
-						speedKmh: closest.speedKmh ?? 0,
-					});
+				// Quantize to 500ms to avoid excessive updates
+				const quantized = Math.round(xVal / 500) * 500;
+				if (quantized !== lastHoveredTs) {
+					lastHoveredTs = quantized;
+					const interp = interpolatePosition(history, xVal);
+					if (interp) busStore.setHoveredHistoryPoint(interp);
 				}
 			} else {
 				if (lastHoveredTs !== null) {
@@ -141,19 +139,45 @@
 		ro.observe(chartEl);
 	}
 
-	/** Binary search for the closest record by timestamp */
-	function findClosestRecord(records: BusLocation[], timestamp: number): BusLocation | null {
+	/** Interpolate position between records at a given timestamp */
+	function interpolatePosition(records: BusLocation[], timestamp: number): { lat: number; lng: number; timestamp: number; speedKmh: number } | null {
 		if (records.length === 0) return null;
+		if (records.length === 1) {
+			const r = records[0];
+			return { lat: r.lat, lng: r.lng, timestamp: r.timestamp, speedKmh: r.speedKmh ?? 0 };
+		}
+
+		// Clamp to range
+		if (timestamp <= records[0].timestamp) {
+			const r = records[0];
+			return { lat: r.lat, lng: r.lng, timestamp: r.timestamp, speedKmh: r.speedKmh ?? 0 };
+		}
+		if (timestamp >= records[records.length - 1].timestamp) {
+			const r = records[records.length - 1];
+			return { lat: r.lat, lng: r.lng, timestamp: r.timestamp, speedKmh: r.speedKmh ?? 0 };
+		}
+
+		// Binary search for the interval containing the timestamp
 		let lo = 0, hi = records.length - 1;
 		while (lo < hi) {
 			const mid = (lo + hi) >> 1;
 			if (records[mid].timestamp < timestamp) lo = mid + 1;
 			else hi = mid;
 		}
-		if (lo > 0 && Math.abs(records[lo - 1].timestamp - timestamp) < Math.abs(records[lo].timestamp - timestamp)) {
-			return records[lo - 1];
+		// lo is the first record with timestamp >= target
+		const after = records[lo];
+		const before = records[lo - 1];
+		const gap = after.timestamp - before.timestamp;
+		if (gap <= 0) {
+			return { lat: before.lat, lng: before.lng, timestamp: before.timestamp, speedKmh: before.speedKmh ?? 0 };
 		}
-		return records[lo];
+		const t = (timestamp - before.timestamp) / gap;
+		return {
+			lat: before.lat + (after.lat - before.lat) * t,
+			lng: before.lng + (after.lng - before.lng) * t,
+			timestamp,
+			speedKmh: (before.speedKmh ?? 0) + ((after.speedKmh ?? 0) - (before.speedKmh ?? 0)) * t,
+		};
 	}
 
 	onMount(() => {
@@ -189,7 +213,7 @@
 		if (collectionStore.storageService) {
 			collectionStore.storageService.getBusHistory(busId).then(h => {
 				if (h.length > 0) history = h;
-			});
+			}).catch(() => { /* storage read failed */ });
 		}
 	}
 

@@ -6,7 +6,19 @@
 	import { busStore, getBusStatus, getStatusColor } from '$lib/stores/buses.svelte';
 	import { appStore } from '$lib/stores/app.svelte';
 	import { collectionStore } from '$lib/stores/collection.svelte';
+	import { playbackStore } from '$lib/stores/playback.svelte';
 	import { MAP_CENTER, MAP_ZOOM } from '$lib/utils/constants';
+
+	function escapeHtml(s: string): string {
+		return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+	}
+
+	function setFrozenState(el: HTMLDivElement, isFrozen: boolean) {
+		const frozen = isFrozen ? '0.45' : '';
+		const filter = isFrozen ? 'saturate(0.3)' : '';
+		if (el.style.opacity !== frozen) el.style.opacity = frozen;
+		if (el.style.filter !== filter) el.style.filter = filter;
+	}
 
 
 	let mapContainer: HTMLDivElement;
@@ -16,6 +28,11 @@
 		marker: maplibregl.Marker;
 		element: HTMLDivElement;
 		busId: string;
+		cachedColor: string;
+		cachedRouteNr: string;
+		cachedIsSelected: boolean;
+		cachedSpeed: number | undefined;
+		cachedDirection: number;
 	}>();
 	let resizeObserver: ResizeObserver | null = null;
 	let animFrameId: number | null = null;
@@ -36,15 +53,49 @@
 	function spawnShockwave(lng: number, lat: number) {
 		if (!map) return;
 		const el = document.createElement('div');
-		el.className = 'shockwave-ring';
+		el.style.cssText = `
+			width: 10px; height: 10px; border-radius: 50%;
+			pointer-events: none; position: relative;
+		`;
+		// Create two expanding ring children (replaces ::before/::after pseudo-elements)
+		for (const delay of [0, 150]) {
+			const ring = document.createElement('div');
+			ring.style.cssText = `
+				position: absolute; top: 50%; left: 50%;
+				width: 20px; height: 20px; border-radius: 50%;
+				border: ${delay === 0 ? '2px' : '1px'} solid rgba(239, 68, 68, ${delay === 0 ? 0.8 : 0.4});
+				transform: translate(-50%, -50%);
+			`;
+			ring.animate([
+				{ transform: 'translate(-50%, -50%) scale(1)', opacity: 1 },
+				{ transform: 'translate(-50%, -50%) scale(8)', opacity: 0 },
+			], { duration: 1200, easing: 'ease-out', delay, fill: 'forwards' });
+			el.appendChild(ring);
+		}
 		const m = new maplibregl.Marker({ element: el, anchor: 'center' })
 			.setLngLat([lng, lat])
 			.addTo(map);
-		// Auto-remove after animation completes
-		setTimeout(() => m.remove(), 1200);
+		setTimeout(() => m.remove(), 1400);
+	}
+
+	// Inject global keyframes for animations referenced in marker innerHTML.
+	// Svelte scopes <style> keyframes, so they don't work in dynamically created elements.
+	let injectedStyle: HTMLStyleElement | null = null;
+	function injectGlobalKeyframes() {
+		if (document.getElementById('mapview-keyframes')) return;
+		injectedStyle = document.createElement('style');
+		injectedStyle.id = 'mapview-keyframes';
+		injectedStyle.textContent = `
+			@keyframes violation-ring {
+				0% { transform: scale(0.8); opacity: 0.8; }
+				100% { transform: scale(2.2); opacity: 0; }
+			}
+		`;
+		document.head.appendChild(injectedStyle);
 	}
 
 	onMount(() => {
+		injectGlobalKeyframes();
 		map = new maplibregl.Map({
 			container: mapContainer,
 			style: {
@@ -207,7 +258,7 @@
 
 		map.on('click', (e: maplibregl.MapMouseEvent) => {
 			const target = e.originalEvent.target as HTMLElement;
-			if (!target.closest('.bus-marker')) {
+			if (!target.closest('[data-bus-marker]')) {
 				busStore.selectBus(null);
 			}
 		});
@@ -222,18 +273,16 @@
 		resizeObserver.observe(mapContainer);
 	});
 
-	// Animation loop: Kalman-predicted positions at 60fps + camera follow
+	// Animation loop: route-constrained or spline-interpolated positions at 60fps + camera follow
 	function startAnimLoop() {
 		function tick() {
-			const now = Date.now();
-			const calc = collectionStore.speedCalculator;
+			const now = appStore.mode === 'playback' ? playbackStore.currentTimestamp : Date.now();
 			for (const entry of markers.values()) {
-				if (calc) {
-					const pred = calc.getPredictedPosition(entry.busId, now);
-					if (pred) {
-						entry.marker.setLngLat([pred.lng, pred.lat]);
-						continue;
-					}
+				const result = collectionStore.getAnimatedPosition(entry.busId, now);
+				if (result) {
+					entry.marker.setLngLat([result.lng, result.lat]);
+					setFrozenState(entry.element, result.isFrozen);
+					continue;
 				}
 				// Fallback: position already set from bus store data
 			}
@@ -260,6 +309,7 @@
 	onDestroy(() => {
 		if (animFrameId) cancelAnimationFrame(animFrameId);
 		resizeObserver?.disconnect();
+		injectedStyle?.remove();
 		if (ghostMarker) { ghostMarker.remove(); ghostMarker = null; }
 		for (const { marker } of markers.values()) {
 			marker.remove();
@@ -279,7 +329,13 @@
 			ghostMarker.setLngLat([point.lng, point.lat]);
 		} else {
 			const el = document.createElement('div');
-			el.className = 'ghost-position-dot';
+			el.style.cssText = `
+				width: 14px; height: 14px; border-radius: 50%;
+				background: rgba(6, 182, 212, 0.4);
+				border: 2px solid #06b6d4;
+				box-shadow: 0 0 12px rgba(6, 182, 212, 0.6);
+				pointer-events: none;
+			`;
 			ghostMarker = new maplibregl.Marker({ element: el, anchor: 'center' })
 				.setLngLat([point.lng, point.lat])
 				.addTo(map);
@@ -299,7 +355,13 @@
 			if (!currentIds.has(busId)) {
 				marker.remove();
 				markers.delete(busId);
-				busTrails.delete(busId);
+			}
+		}
+
+		// Remove orphaned trails for buses no longer active
+		for (const trailBusId of busTrails.keys()) {
+			if (!currentIds.has(trailBusId)) {
+				busTrails.delete(trailBusId);
 			}
 		}
 
@@ -309,45 +371,45 @@
 			const color = getStatusColor(status);
 			const isSelected = bus.busId === busStore.selectedBusId;
 
-			// Update trail history using Kalman-smoothed positions (raw GPS is quantized into a grid)
-			let trail = busTrails.get(bus.busId);
-			if (!trail) {
-				trail = [];
-				busTrails.set(bus.busId, trail);
-			}
-			const lastPoint = trail[trail.length - 1];
-			if (!lastPoint || lastPoint.lng !== bus.lng || lastPoint.lat !== bus.lat) {
-				let trailLng = bus.lng;
-				let trailLat = bus.lat;
-				const trailCalc = collectionStore.speedCalculator;
-				if (trailCalc) {
-					const pred = trailCalc.getPredictedPosition(bus.busId, now);
-					if (pred) { trailLng = pred.lng; trailLat = pred.lat; }
+			// Update trail history using animated positions (route-constrained or spline)
+			const trailResult = collectionStore.getAnimatedPosition(bus.busId, now);
+			if (trailResult && !trailResult.isFrozen) {
+				let trail = busTrails.get(bus.busId);
+				if (!trail) {
+					trail = [];
+					busTrails.set(bus.busId, trail);
 				}
-				trail.push({ lng: trailLng, lat: trailLat, ts: now });
-				// Prune old points
-				while (trail.length > TRAIL_MAX_POINTS) trail.shift();
-				while (trail.length > 0 && now - trail[0].ts > TRAIL_MAX_AGE_MS) trail.shift();
+				const lastPoint = trail[trail.length - 1];
+				if (!lastPoint || lastPoint.lng !== trailResult.lng || lastPoint.lat !== trailResult.lat) {
+					trail.push({ lng: trailResult.lng, lat: trailResult.lat, ts: now });
+					while (trail.length > TRAIL_MAX_POINTS) trail.shift();
+					while (trail.length > 0 && now - trail[0].ts > TRAIL_MAX_AGE_MS) trail.shift();
+				}
 			}
 
 			const existing = markers.get(bus.busId);
 			if (existing) {
-				// Update visual element (color, speed badge, etc.)
-				// Position is handled by the Kalman animation loop
-				updateMarkerElement(existing.element, bus.routeNr, color, status, isSelected, bus.speedKmh, bus.speedLimitKmh, bus.direction);
+				// Only rebuild innerHTML if visual-affecting fields actually changed
+				if (existing.cachedColor !== color || existing.cachedRouteNr !== bus.routeNr ||
+					existing.cachedIsSelected !== isSelected || existing.cachedSpeed !== bus.speedKmh ||
+					existing.cachedDirection !== bus.direction) {
+					updateMarkerElement(existing.element, bus.routeNr, color, status, isSelected, bus.speedKmh, bus.speedLimitKmh, bus.direction);
+					existing.cachedColor = color;
+					existing.cachedRouteNr = bus.routeNr;
+					existing.cachedIsSelected = isSelected;
+					existing.cachedSpeed = bus.speedKmh;
+					existing.cachedDirection = bus.direction;
+				}
 			} else {
 				const el = createMarkerElement(bus.routeNr, color, status, isSelected, bus.busId, bus.speedKmh, bus.speedLimitKmh, bus.direction);
 
-				// Use Kalman-predicted position if available, else raw GPS
+				// Use animated position if available, else raw GPS
 				let initLng = bus.lng;
 				let initLat = bus.lat;
-				const calc = collectionStore.speedCalculator;
-				if (calc) {
-					const pred = calc.getPredictedPosition(bus.busId, Date.now());
-					if (pred) {
-						initLng = pred.lng;
-						initLat = pred.lat;
-					}
+				const initPos = collectionStore.getAnimatedPosition(bus.busId, now);
+				if (initPos) {
+					initLng = initPos.lng;
+					initLat = initPos.lat;
 				}
 
 				const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
@@ -358,23 +420,25 @@
 					marker,
 					element: el,
 					busId: bus.busId,
+					cachedColor: color,
+					cachedRouteNr: bus.routeNr,
+					cachedIsSelected: isSelected,
+					cachedSpeed: bus.speedKmh,
+					cachedDirection: bus.direction,
 				});
 			}
 		}
 
 		// Detect new violations, spawn shockwaves, accumulate heatmap
 		const newViolators = new Set<string>();
-		const calc = collectionStore.speedCalculator;
 		for (const bus of currentBuses) {
 			if (bus.isViolation) {
 				newViolators.add(bus.busId);
-				// Use Kalman-predicted position so shockwave appears at the marker
+				// Use animated position so shockwave appears at the marker
 				let lng = bus.lng;
 				let lat = bus.lat;
-				if (calc) {
-					const pred = calc.getPredictedPosition(bus.busId, Date.now());
-					if (pred) { lng = pred.lng; lat = pred.lat; }
-				}
+				const shockPos = collectionStore.getAnimatedPosition(bus.busId, now);
+				if (shockPos) { lng = shockPos.lng; lat = shockPos.lat; }
 				if (!knownViolators.has(bus.busId)) {
 					spawnShockwave(lng, lat);
 				}
@@ -446,7 +510,7 @@
 		source.setData({ type: 'FeatureCollection', features: allPoints });
 	});
 
-	// Show route path when a bus is selected
+	// Show route path when a bus is selected (GTFS shape if available, else trail)
 	$effect(() => {
 		if (!map || !mapLoaded) return;
 		const source = map.getSource('route-path') as maplibregl.GeoJSONSource | undefined;
@@ -458,7 +522,20 @@
 			return;
 		}
 
-		// Build route path from the bus's trail history
+		// Try GTFS route shape first
+		const gtfs = appStore.gtfsService;
+		if (gtfs) {
+			const shapeId = gtfs.getShapeId(selected.tripId, selected.routeNr, selected.direction);
+			if (shapeId) {
+				const shapeFeature = gtfs.getShapeGeoJson(shapeId);
+				if (shapeFeature) {
+					source.setData({ type: 'FeatureCollection', features: [shapeFeature] });
+					return;
+				}
+			}
+		}
+
+		// Fallback: trail history
 		const trail = busTrails.get(selected.busId);
 		if (!trail || trail.length < 2) {
 			source.setData({ type: 'FeatureCollection', features: [] });
@@ -517,7 +594,8 @@
 		direction?: number,
 	): HTMLDivElement {
 		const el = document.createElement('div');
-		el.className = 'bus-marker';
+		el.style.willChange = 'transform';
+		el.dataset.busMarker = '';
 		el.addEventListener('click', (e) => {
 			e.stopPropagation();
 			busStore.selectBus(busStore.selectedBusId === busId ? null : busId);
@@ -596,7 +674,7 @@
 				inset 0 1px 2px rgba(255,255,255,0.15);
 			font-family: var(--font-sans); letter-spacing: -0.5px;
 			text-shadow: 0 1px 3px rgba(0,0,0,0.5);
-		">${routeNr}</div>`;
+		">${escapeHtml(routeNr)}</div>`;
 
 		// Speed badge (always visible when there's speed data)
 		if (speed != null && speed > 0) {
@@ -630,78 +708,3 @@
 
 <div bind:this={mapContainer} class="absolute inset-0 w-full h-full"></div>
 
-<style>
-	/* Do NOT add transition on transform — MapLibre uses transform to position
-	   markers on screen. A CSS transition causes markers to lag behind during
-	   pan/zoom, making them appear to float in the wrong location (e.g. the sea). */
-	:global(.bus-marker) {
-		will-change: transform;
-	}
-
-	/* Violation pulse ring animation */
-	@keyframes violation-ring {
-		0% { transform: scale(0.8); opacity: 0.8; }
-		100% { transform: scale(2.2); opacity: 0; }
-	}
-
-	/* Info panel appear */
-	@keyframes marker-info-appear {
-		from { opacity: 0; transform: translateX(-50%) translateY(-4px); }
-		to { opacity: 1; transform: translateX(-50%) translateY(0); }
-	}
-
-	/* Violation shockwave expanding ring on map */
-	:global(.shockwave-ring) {
-		width: 10px;
-		height: 10px;
-		border-radius: 50%;
-		pointer-events: none;
-		position: relative;
-	}
-
-	:global(.shockwave-ring)::before,
-	:global(.shockwave-ring)::after {
-		content: '';
-		position: absolute;
-		top: 50%;
-		left: 50%;
-		border-radius: 50%;
-		transform: translate(-50%, -50%);
-	}
-
-	:global(.shockwave-ring)::before {
-		width: 20px;
-		height: 20px;
-		border: 2px solid rgba(239, 68, 68, 0.8);
-		animation: shockwave-expand 1.2s ease-out forwards;
-	}
-
-	:global(.shockwave-ring)::after {
-		width: 20px;
-		height: 20px;
-		border: 1px solid rgba(239, 68, 68, 0.4);
-		animation: shockwave-expand 1.2s ease-out 0.15s forwards;
-	}
-
-	@keyframes shockwave-expand {
-		0% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
-		100% { transform: translate(-50%, -50%) scale(8); opacity: 0; }
-	}
-
-	/* Ghost dot: shows GPS position for hovered chart point */
-	:global(.ghost-position-dot) {
-		width: 12px;
-		height: 12px;
-		border-radius: 50%;
-		background: rgba(6, 182, 212, 0.3);
-		border: 2px solid #06b6d4;
-		box-shadow: 0 0 8px rgba(6, 182, 212, 0.5);
-		animation: ghost-pulse 1.5s ease-in-out infinite;
-		pointer-events: none;
-	}
-
-	@keyframes ghost-pulse {
-		0%, 100% { transform: scale(1); opacity: 0.8; }
-		50% { transform: scale(1.4); opacity: 1; }
-	}
-</style>

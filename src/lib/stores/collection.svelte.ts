@@ -2,6 +2,8 @@ import { POLLING_INTERVAL_MS } from '$lib/utils/constants';
 import { CollectionService } from '$lib/services/collection-service';
 import { SpeedLimitService } from '$lib/services/speed-limit-service';
 import { StorageService } from '$lib/services/storage-service';
+import type { GtfsService } from '$lib/services/gtfs-service';
+import type { RouteShapeIndex } from '$lib/services/route-shape-index';
 import { generateMockData, resetMockData, ensureSampleLoaded } from '$lib/services/mock-data';
 import type { BusLocation } from '$lib/types/bus';
 import { busStore } from './buses.svelte';
@@ -20,12 +22,32 @@ class CollectionStore {
 	private timer: ReturnType<typeof setInterval> | null = null;
 	private monitorTimer: ReturnType<typeof setInterval> | null = null;
 	private simulateTimer: ReturnType<typeof setInterval> | null = null;
+	private isCollecting = false;
+	private refreshCounter = 0;
 	collectionService: CollectionService | null = null;
 	storageService: StorageService | null = null;
 
-	/** Expose Kalman calculator for MapView animation */
-	get speedCalculator() {
-		return this.collectionService?.speedCalculator ?? null;
+	/** Expose spline renderer for MapView animation (legacy, used for trail sampling) */
+	get renderer() {
+		return this.collectionService?.renderer ?? null;
+	}
+
+	/** Set time source for renderer (e.g. for playback mode) */
+	setTimeSource(getTime: () => number) {
+		if (this.collectionService?.renderer) {
+			this.collectionService.renderer.setTimeSource(getTime);
+		}
+		if (this.collectionService?.mapMatcher) {
+			this.collectionService.mapMatcher.setTimeSource(getTime);
+		}
+		if (this.collectionService?.routeAnimator) {
+			this.collectionService.routeAnimator.setTimeSource(getTime);
+		}
+	}
+
+	/** Unified animated position: route-constrained when possible, spline fallback. */
+	getAnimatedPosition(busId: string, nowMs: number): { lat: number; lng: number; isFrozen: boolean } | null {
+		return this.collectionService?.getAnimatedPosition(busId, nowMs) ?? null;
 	}
 
 	get elapsedSeconds(): number {
@@ -33,8 +55,17 @@ class CollectionStore {
 		return Math.floor((Date.now() - this.startedAt) / 1000);
 	}
 
-	async init(speedLimitService: SpeedLimitService, storageService: StorageService) {
-		this.collectionService = new CollectionService(speedLimitService);
+	async init(
+		speedLimitService: SpeedLimitService,
+		storageService: StorageService,
+		gtfsService?: GtfsService,
+		routeShapeIndex?: RouteShapeIndex,
+	) {
+		this.collectionService = new CollectionService(
+			speedLimitService,
+			gtfsService ?? null,
+			routeShapeIndex ?? null,
+		);
 		this.storageService = storageService;
 
 		// Register stale bus callback
@@ -87,35 +118,46 @@ class CollectionStore {
 
 	private async monitorOnce() {
 		if (!this.collectionService) return;
-		const locations = await this.collectionService.collectOnce();
-		if (locations && locations.length > 0) {
-			busStore.updateBuses(locations, true);
+		if (this.isCollecting) return;
+		this.isCollecting = true;
+		try {
+			const locations = await this.collectionService.collectOnce();
+			if (locations && locations.length > 0) {
+				busStore.updateBuses(locations, true);
+			}
+		} finally {
+			this.isCollecting = false;
 		}
 	}
 
 	private async recordAndStore() {
 		if (!this.collectionService || !this.storageService) return;
+		if (this.isCollecting) return;
+		this.isCollecting = true;
 
-		const locations = await this.collectionService.collectOnce();
-		if (!locations) {
-			this.lastError = 'Failed to fetch bus data';
-			return;
+		try {
+			const locations = await this.collectionService.collectOnce();
+			if (!locations) {
+				this.lastError = 'Failed to fetch bus data';
+				return;
+			}
+
+			this.lastError = null;
+
+			if (locations.length > 0) {
+				busStore.updateBuses(locations, true);
+				await this.storageService.storeBatch(locations);
+				this.recordsRecorded += locations.length;
+				this.violationsDetected += locations.filter((l) => l.isViolation).length;
+			}
+
+			if (++this.refreshCounter >= 15) {
+				this.refreshCounter = 0;
+				await this.refreshStorageInfo();
+			}
+		} finally {
+			this.isCollecting = false;
 		}
-
-		this.lastError = null;
-
-		if (locations.length > 0) {
-			// Update live display
-			busStore.updateBuses(locations, true);
-
-			// Store to IndexedDB
-			await this.storageService.storeBatch(locations);
-
-			this.recordsRecorded += locations.length;
-			this.violationsDetected += locations.filter((l) => l.isViolation).length;
-		}
-
-		await this.refreshStorageInfo();
 	}
 
 	async refreshStorageInfo() {

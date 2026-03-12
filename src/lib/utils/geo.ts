@@ -51,7 +51,7 @@ export function pointToLineSegmentDistanceM(
 	let closestLat: number;
 	let closestLng: number;
 
-	if (lenSq === 0) {
+	if (lenSq < 1e-12) {
 		closestLat = aLat;
 		closestLng = aLng;
 	} else {
@@ -62,6 +62,52 @@ export function pointToLineSegmentDistanceM(
 	}
 
 	return haversineDistanceM(pLat, pLng, closestLat, closestLng);
+}
+
+/** Project point onto line segment, returning t parameter, projected coords, and distance. */
+export function projectPointOnSegment(
+	pLat: number,
+	pLng: number,
+	aLat: number,
+	aLng: number,
+	bLat: number,
+	bLng: number
+): { t: number; projLat: number; projLng: number; distanceM: number } {
+	const pX = pLng * REYKJAVIK_LNG_DEG_TO_KM;
+	const pY = pLat * REYKJAVIK_LAT_DEG_TO_KM;
+	const aX = aLng * REYKJAVIK_LNG_DEG_TO_KM;
+	const aY = aLat * REYKJAVIK_LAT_DEG_TO_KM;
+	const bX = bLng * REYKJAVIK_LNG_DEG_TO_KM;
+	const bY = bLat * REYKJAVIK_LAT_DEG_TO_KM;
+
+	const dx = bX - aX;
+	const dy = bY - aY;
+	const lenSq = dx * dx + dy * dy;
+
+	let t: number;
+	if (lenSq < 1e-12) {
+		t = 0;
+	} else {
+		t = Math.max(0, Math.min(1, ((pX - aX) * dx + (pY - aY) * dy) / lenSq));
+	}
+
+	const projLat = aLat + t * (bLat - aLat);
+	const projLng = aLng + t * (bLng - aLng);
+	const distanceM = haversineDistanceM(pLat, pLng, projLat, projLng);
+
+	return { t, projLat, projLng, distanceM };
+}
+
+/** Flat-Earth distance in meters between two WGS84 coordinates at Reykjavik latitude. */
+export function flatDistanceM(
+	lat1: number,
+	lng1: number,
+	lat2: number,
+	lng2: number
+): number {
+	const dy = (lat2 - lat1) * REYKJAVIK_LAT_DEG_TO_KM * 1000;
+	const dx = (lng2 - lng1) * REYKJAVIK_LNG_DEG_TO_KM * 1000;
+	return Math.sqrt(dx * dx + dy * dy);
 }
 
 /** Convert distance in meters and time delta in seconds to speed in km/h. */

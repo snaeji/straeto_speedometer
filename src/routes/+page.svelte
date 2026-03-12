@@ -2,6 +2,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { SpeedLimitService } from '$lib/services/speed-limit-service';
 	import { GtfsService } from '$lib/services/gtfs-service';
+	import { RouteShapeIndex } from '$lib/services/route-shape-index';
 	import { StorageService } from '$lib/services/storage-service';
 	import { appStore } from '$lib/stores/app.svelte';
 	import { collectionStore } from '$lib/stores/collection.svelte';
@@ -15,6 +16,7 @@
 	let loadingMessage = $state('Initializing...');
 	let loadingProgress = $state(0);
 	let error = $state<string | null>(null);
+	let cleanupTimer: ReturnType<typeof setInterval> | null = null;
 
 	const speedLimitService = new SpeedLimitService();
 	const gtfsService = new GtfsService();
@@ -39,30 +41,46 @@
 			await gtfsService.load(`${base}/gtfs`);
 			appStore.gtfsService = gtfsService;
 			appStore.gtfsLoaded = true;
-			loadingProgress = 55;
+			loadingProgress = 50;
 
-			// Step 3: Open IndexedDB
+			// Step 3: Build route shape index
+			loadingMessage = 'Building route index';
+			loadingProgress = 55;
+			const routeShapeIndex = new RouteShapeIndex();
+			if (gtfsService.shapesGeoJson) {
+				routeShapeIndex.build(gtfsService.shapesGeoJson, gtfsService);
+			}
+			appStore.routeShapeIndex = routeShapeIndex;
+			loadingProgress = 60;
+
+			// Step 4: Open IndexedDB
 			loadingMessage = 'Opening database';
 			loadingProgress = 65;
 			await storageService.open();
 
-			// Step 4: Initialize stores
+			// Step 5: Initialize stores
 			loadingMessage = 'Starting services';
 			loadingProgress = 80;
-			await collectionStore.init(speedLimitService, storageService);
+			await collectionStore.init(speedLimitService, storageService, gtfsService, routeShapeIndex);
 			await playbackStore.init(storageService);
 			await statsStore.init(storageService);
+
+			// Periodic cleanup of stale animation state
+			cleanupTimer = setInterval(() => {
+				collectionStore.collectionService?.cleanupStale();
+			}, 60_000);
 
 			loadingProgress = 100;
 			await new Promise((r) => setTimeout(r, 200)); // Brief pause for visual
 			initialized = true;
 		} catch (err) {
 			console.error('Initialization error:', err);
-			error = err instanceof Error ? err.message : 'Unknown error';
+			error = 'Failed to load application. Please refresh the page.';
 		}
 	});
 
 	onDestroy(() => {
+		if (cleanupTimer) clearInterval(cleanupTimer);
 		collectionStore.destroy();
 		playbackStore.destroy();
 	});

@@ -5,10 +5,13 @@ const DB_NAME = 'straeto_speedometer_v2';
 const DB_VERSION = 1;
 const STORE_NAME = 'bus_locations';
 
+const MAX_IMPORT_SIZE = 100 * 1024 * 1024; // 100MB
+
 type StraetoDb = IDBPDatabase;
 
 export class StorageService {
 	private db: StraetoDb | null = null;
+	private writeLock: Promise<void> = Promise.resolve();
 
 	async open(): Promise<void> {
 		this.db = await openDB(DB_NAME, DB_VERSION, {
@@ -23,14 +26,23 @@ export class StorageService {
 	}
 
 	async storeBatch(locations: BusLocation[]): Promise<void> {
-		if (!this.db) return;
-		const tx = this.db.transaction(STORE_NAME, 'readwrite');
-		const store = tx.objectStore(STORE_NAME);
-		for (const loc of locations) {
-			const key = `${loc.timestamp}_${loc.busId}`;
-			await store.put(busLocationToJsonLine(loc), key);
+		const prev = this.writeLock;
+		let resolve!: () => void;
+		this.writeLock = new Promise<void>((r) => { resolve = r; });
+		await prev;
+
+		try {
+			if (!this.db) return;
+			const tx = this.db.transaction(STORE_NAME, 'readwrite');
+			const store = tx.objectStore(STORE_NAME);
+			for (const loc of locations) {
+				const key = `${loc.timestamp}_${loc.busId}`;
+				store.put(busLocationToJsonLine(loc), key);
+			}
+			await tx.done;
+		} finally {
+			resolve();
 		}
-		await tx.done;
 	}
 
 	async getLocationsInRange(start: number, end: number): Promise<BusLocation[]> {
@@ -106,12 +118,21 @@ export class StorageService {
 	}
 
 	async importJsonl(text: string): Promise<number> {
+		if (text.length > MAX_IMPORT_SIZE) {
+			throw new Error(`Import too large (${Math.round(text.length / 1024 / 1024)}MB). Max 100MB.`);
+		}
 		const lines = text.split('\n').filter((l) => l.trim());
 		const locations: BusLocation[] = [];
 
 		for (const line of lines) {
 			try {
 				const json = JSON.parse(line);
+				if (!json || typeof json.b !== 'string' || typeof json.r !== 'string' ||
+					typeof json.la !== 'number' || !isFinite(json.la) ||
+					typeof json.ln !== 'number' || !isFinite(json.ln) ||
+					typeof json.ts !== 'number' || json.ts <= 0) {
+					continue;
+				}
 				locations.push(busLocationFromJsonLine(json));
 			} catch {
 				// Skip invalid lines
@@ -121,7 +142,6 @@ export class StorageService {
 		if (locations.length > 0) {
 			await this.storeBatch(locations);
 		}
-
 		return locations.length;
 	}
 

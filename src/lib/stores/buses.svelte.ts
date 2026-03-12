@@ -43,11 +43,19 @@ class BusStore {
 	/** Callbacks when a bus goes stale (for speed calculator reset) */
 	private onBusStaleCallbacks: ((busId: string) => void)[] = [];
 
+	private _activeBusesCache: BusLocation[] | null = null;
+
 	// Derived values
 	get activeBuses(): BusLocation[] {
-		const list = Array.from(this.buses.values());
-		if (!this.routeFilter) return list;
-		return list.filter((b) => this.routeFilter!.has(b.routeNr));
+		// Read reactive deps BEFORE cache check so Svelte always tracks them
+		const buses = this.buses;
+		const filter = this.routeFilter;
+		if (this._activeBusesCache !== null) return this._activeBusesCache;
+		const list = Array.from(buses.values());
+		this._activeBusesCache = filter
+			? list.filter((b) => filter.has(b.routeNr))
+			: list;
+		return this._activeBusesCache;
 	}
 
 	get activeCount(): number {
@@ -97,11 +105,14 @@ class BusStore {
 			}
 
 			this.buses = newMap;
+			this._activeBusesCache = null;
 
 			// Accumulate to live history for stats
-			this.liveHistory.push(...locations);
-			if (this.liveHistory.length > LIVE_HISTORY_MAX) {
-				this.liveHistory = this.liveHistory.slice(-LIVE_HISTORY_MAX);
+			if (this.liveHistory.length + locations.length > LIVE_HISTORY_MAX) {
+				const keep = Math.max(0, LIVE_HISTORY_MAX - locations.length);
+				this.liveHistory = [...this.liveHistory.slice(-keep), ...locations];
+			} else {
+				this.liveHistory.push(...locations);
 			}
 		} else {
 			// Replace entirely (playback mode)
@@ -110,6 +121,7 @@ class BusStore {
 				newMap.set(loc.busId, loc);
 			}
 			this.buses = newMap;
+			this._activeBusesCache = null;
 		}
 	}
 
@@ -125,6 +137,7 @@ class BusStore {
 
 	setRouteFilter(routes: Set<string> | null) {
 		this.routeFilter = routes;
+		this._activeBusesCache = null;
 	}
 
 	onBusStale(callback: (busId: string) => void) {
@@ -140,6 +153,9 @@ class BusStore {
 	clear() {
 		this.buses = new Map();
 		this.selectedBusId = null;
+		this.liveHistory = [];
+		this._activeBusesCache = null;
+		this.onBusStaleCallbacks = [];
 	}
 }
 

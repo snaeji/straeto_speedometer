@@ -7,6 +7,8 @@ export interface SpeedLimitResult {
 	roadName?: string;
 }
 
+export type MatchConfidence = 'high' | 'low' | 'off-route';
+
 export interface BusLocation {
 	busId: string;
 	routeNr: string;
@@ -21,6 +23,11 @@ export interface BusLocation {
 	speedLimitMatch?: SpeedLimitMatch;
 	speedLimitRoad?: string;
 	isViolation: boolean;
+	matchConfidence?: MatchConfidence;
+	snappedLat?: number;
+	snappedLng?: number;
+	distAlongRouteM?: number;
+	isNearStop?: boolean;
 }
 
 export interface BusLocationUpdate extends BusLocation {
@@ -84,7 +91,18 @@ export function busLocationToJsonLine(loc: BusLocation): JsonLineRecord {
 
 export function copyBusLocationWith(
 	loc: BusLocation,
-	overrides: { speedKmh?: number; speedLimitKmh?: number; speedLimitMatch?: SpeedLimitMatch; speedLimitRoad?: string; isViolation?: boolean }
+	overrides: {
+		speedKmh?: number;
+		speedLimitKmh?: number;
+		speedLimitMatch?: SpeedLimitMatch;
+		speedLimitRoad?: string;
+		isViolation?: boolean;
+		matchConfidence?: MatchConfidence;
+		snappedLat?: number;
+		snappedLng?: number;
+		distAlongRouteM?: number;
+		isNearStop?: boolean;
+	}
 ): BusLocation {
 	return { ...loc, ...overrides };
 }
@@ -119,7 +137,7 @@ export interface SpeedLimitSegment {
 	objectId: number;
 	name?: string;
 	speedLimitKmh: number;
-	coordinates: [number, number][]; // [lng, lat][] GeoJSON order
+	coordinateGroups: [number, number][][]; // Array of [lng, lat][] — one per linestring
 }
 
 export type AppMode = 'live' | 'playback' | 'stats' | 'heatmap';

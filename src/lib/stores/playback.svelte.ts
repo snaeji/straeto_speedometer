@@ -1,6 +1,7 @@
 import type { PlaybackSpeed } from '$lib/types/bus';
 import { StorageService } from '$lib/services/storage-service';
 import { busStore } from './buses.svelte';
+import { collectionStore } from './collection.svelte';
 
 class PlaybackStore {
 	isPlaying = $state(false);
@@ -12,6 +13,8 @@ class PlaybackStore {
 
 	private timer: ReturnType<typeof setInterval> | null = null;
 	private storageService: StorageService | null = null;
+	private seekVersion = 0;
+	private isLoadingFrame = false;
 
 	get progress(): number {
 		const range = this.endTimestamp - this.startTimestamp;
@@ -41,6 +44,9 @@ class PlaybackStore {
 		if (this.isPlaying || !this.hasData) return;
 		this.isPlaying = true;
 
+		// Set renderer time source to playback time
+		collectionStore.setTimeSource(() => this.currentTimestamp);
+
 		const tickMs = 100; // update every 100ms
 		this.timer = setInterval(() => {
 			const advance = (tickMs / 1000) * this.speed * 1000; // ms of real time per tick
@@ -52,7 +58,10 @@ class PlaybackStore {
 				return;
 			}
 
-			this.loadCurrentFrame();
+			if (!this.isLoadingFrame) {
+				this.isLoadingFrame = true;
+				this.loadCurrentFrame().finally(() => { this.isLoadingFrame = false; });
+			}
 		}, tickMs);
 	}
 
@@ -62,11 +71,16 @@ class PlaybackStore {
 			this.timer = null;
 		}
 		this.isPlaying = false;
+
+		// Restore real-time clock and flush stale animation buffers
+		collectionStore.setTimeSource(() => Date.now());
+		collectionStore.collectionService?.resetAll();
 	}
 
 	async seekTo(timestamp: number) {
 		this.currentTimestamp = Math.max(this.startTimestamp, Math.min(this.endTimestamp, timestamp));
-		await this.loadCurrentFrame();
+		const version = ++this.seekVersion;
+		await this.loadCurrentFrame(version);
 	}
 
 	async stepForward() {
@@ -81,20 +95,31 @@ class PlaybackStore {
 		this.speed = speed;
 	}
 
-	private async loadCurrentFrame() {
+	private async loadCurrentFrame(version?: number) {
 		if (!this.storageService) return;
-		const windowMs = 5000; // ±5 seconds
+		if (this.isLoadingFrame && version === undefined) return;
+		if (version !== undefined && version !== this.seekVersion) return;
+
+		const windowMs = 5000;
 		const locations = await this.storageService.getLocationsInRange(
 			this.currentTimestamp - windowMs,
 			this.currentTimestamp + windowMs
 		);
 
-		// Keep only latest record per bus within window
+		if (version !== undefined && version !== this.seekVersion) return;
+
 		const latestByBus = new Map<string, typeof locations[number]>();
 		for (const loc of locations) {
 			const existing = latestByBus.get(loc.busId);
 			if (!existing || loc.timestamp > existing.timestamp) {
 				latestByBus.set(loc.busId, loc);
+			}
+		}
+
+		const renderer = collectionStore.renderer;
+		if (renderer) {
+			for (const loc of latestByBus.values()) {
+				renderer.ingestReading(loc.busId, loc);
 			}
 		}
 

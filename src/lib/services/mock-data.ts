@@ -6,9 +6,12 @@ import { busLocationFromJsonLine, type BusLocation, type JsonLineRecord } from '
  */
 
 let snapshots: BusLocation[][] = [];
+let snapshotTimestamps: number[] = [];
 let currentIndex = 0;
 let loaded = false;
 let loading: Promise<void> | null = null;
+let simulationStartTime = 0;
+let firstSnapshotTimestamp = 0;
 
 async function loadSampleData(): Promise<void> {
 	if (loaded) return;
@@ -36,6 +39,7 @@ async function loadSampleData(): Promise<void> {
 		// Sort snapshots chronologically
 		const sortedKeys = [...byTimestamp.keys()].sort((a, b) => a - b);
 		snapshots = sortedKeys.map((ts) => byTimestamp.get(ts)!);
+		snapshotTimestamps = sortedKeys;
 		loaded = true;
 	})();
 
@@ -49,11 +53,19 @@ async function loadSampleData(): Promise<void> {
 export function generateMockData(): BusLocation[] {
 	if (!loaded || snapshots.length === 0) return [];
 
-	const snapshot = snapshots[currentIndex % snapshots.length];
+	const idx = currentIndex % snapshots.length;
+	const snapshot = snapshots[idx];
 	currentIndex++;
 
-	// Rebase timestamps to now so the UI treats them as live
-	const now = Date.now();
+	const origTs = snapshotTimestamps[idx];
+
+	if (simulationStartTime === 0) {
+		simulationStartTime = Date.now();
+		firstSnapshotTimestamp = origTs;
+	}
+
+	// Rebase timestamps preserving original time deltas between snapshots
+	const now = simulationStartTime + (origTs - firstSnapshotTimestamp);
 	return snapshot.map((loc) => ({ ...loc, timestamp: now }));
 }
 
@@ -63,4 +75,5 @@ export async function ensureSampleLoaded(): Promise<void> {
 
 export function resetMockData() {
 	currentIndex = 0;
+	simulationStartTime = 0;
 }

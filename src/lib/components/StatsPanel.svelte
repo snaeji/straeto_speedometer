@@ -1,18 +1,27 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
-	import * as echarts from 'echarts';
 	import { statsStore } from '$lib/stores/stats.svelte';
 	import { busStore } from '$lib/stores/buses.svelte';
 	import { formatDistance } from '$lib/utils/format';
+
+	let echartsModule: typeof import('echarts') | null = null;
+
+	async function getEcharts() {
+		if (!echartsModule) {
+			echartsModule = await import('echarts');
+		}
+		return echartsModule;
+	}
 
 	let routeChartEl: HTMLDivElement;
 	let hourlyChartEl: HTMLDivElement;
 	let speedChartEl: HTMLDivElement;
 	let distChartEl: HTMLDivElement;
-	let routeChart: echarts.ECharts | null = null;
-	let hourlyChart: echarts.ECharts | null = null;
-	let speedChart: echarts.ECharts | null = null;
-	let distChart: echarts.ECharts | null = null;
+	let routeChart: ReturnType<typeof import('echarts')['init']> | null = null;
+	let hourlyChart: ReturnType<typeof import('echarts')['init']> | null = null;
+	let speedChart: ReturnType<typeof import('echarts')['init']> | null = null;
+	let distChart: ReturnType<typeof import('echarts')['init']> | null = null;
+	let resizeObs: ResizeObserver | null = null;
 
 	const chartTheme = {
 		backgroundColor: 'transparent',
@@ -25,21 +34,22 @@
 
 	onMount(async () => {
 		// Chart containers are always in DOM now, so init immediately
+		const echarts = await getEcharts();
 		routeChart = echarts.init(routeChartEl, undefined, { renderer: 'canvas' });
 		hourlyChart = echarts.init(hourlyChartEl, undefined, { renderer: 'canvas' });
 		speedChart = echarts.init(speedChartEl, undefined, { renderer: 'canvas' });
 		distChart = echarts.init(distChartEl, undefined, { renderer: 'canvas' });
 
-		const ro = new ResizeObserver(() => {
+		resizeObs = new ResizeObserver(() => {
 			routeChart?.resize();
 			hourlyChart?.resize();
 			speedChart?.resize();
 			distChart?.resize();
 		});
-		ro.observe(routeChartEl);
-		ro.observe(hourlyChartEl);
-		ro.observe(speedChartEl);
-		ro.observe(distChartEl);
+		resizeObs.observe(routeChartEl);
+		resizeObs.observe(hourlyChartEl);
+		resizeObs.observe(speedChartEl);
+		resizeObs.observe(distChartEl);
 
 		await statsStore.computeStats();
 	});
@@ -54,6 +64,7 @@
 	});
 
 	onDestroy(() => {
+		resizeObs?.disconnect();
 		routeChart?.dispose();
 		hourlyChart?.dispose();
 		speedChart?.dispose();
@@ -89,7 +100,7 @@
 				barWidth: '50%',
 				itemStyle: {
 					borderRadius: [4, 4, 0, 0],
-					color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+					color: new echartsModule!.graphic.LinearGradient(0, 0, 0, 1, [
 						{ offset: 0, color: '#ef4444' },
 						{ offset: 1, color: '#991b1b' },
 					]),
@@ -132,7 +143,7 @@
 				barWidth: '60%',
 				itemStyle: {
 					borderRadius: [3, 3, 0, 0],
-					color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+					color: new echartsModule!.graphic.LinearGradient(0, 0, 0, 1, [
 						{ offset: 0, color: '#f59e0b' },
 						{ offset: 1, color: '#92400e' },
 					]),
@@ -176,7 +187,7 @@
 				barWidth: '50%',
 				itemStyle: {
 					borderRadius: [3, 3, 0, 0],
-					color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+					color: new echartsModule!.graphic.LinearGradient(0, 0, 0, 1, [
 						{ offset: 0, color: '#06b6d4' },
 						{ offset: 1, color: '#0e7490' },
 					]),
@@ -219,7 +230,7 @@
 				barWidth: '60%',
 				itemStyle: {
 					borderRadius: [3, 3, 0, 0],
-					color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+					color: new echartsModule!.graphic.LinearGradient(0, 0, 0, 1, [
 						{ offset: 0, color: '#06b6d4' },
 						{ offset: 1, color: '#d97706' },
 					]),

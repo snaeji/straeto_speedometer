@@ -16,7 +16,14 @@
 		if (hour >= 8 && hour < 20) return 'rgba(50, 100, 180, 0.02)'; // daytime
 		return 'rgba(0, 0, 0, 0)'; // night
 	}
-	const ambientColor = getAmbientColor();
+	let ambientColor = $state(getAmbientColor());
+
+	$effect(() => {
+		const timer = setInterval(() => {
+			ambientColor = getAmbientColor();
+		}, 60_000);
+		return () => clearInterval(timer);
+	});
 
 	let panelExpanded = $state(false);
 

@@ -1,5 +1,6 @@
 import type { AppMode } from '$lib/types/bus';
 import type { GtfsService } from '$lib/services/gtfs-service';
+import type { RouteShapeIndex } from '$lib/services/route-shape-index';
 
 class AppStore {
 	mode = $state<AppMode>('live');
@@ -8,6 +9,7 @@ class AppStore {
 	speedLimitsLoaded = $state(false);
 	gtfsService = $state<GtfsService | null>(null);
 	gtfsLoaded = $state(false);
+	routeShapeIndex = $state<RouteShapeIndex | null>(null);
 
 	toggleSidebar() {
 		this.sidebarOpen = !this.sidebarOpen;

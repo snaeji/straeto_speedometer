@@ -28,7 +28,10 @@
 	$effect(() => {
 		const target = value;
 		const start = displayValue;
-		if (start === target) return;
+		if (start === target) {
+			if (animFrame) cancelAnimationFrame(animFrame);
+			return;
+		}
 
 		const startTime = performance.now();
 		const duration = 400;

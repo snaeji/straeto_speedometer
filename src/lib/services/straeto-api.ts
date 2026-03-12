@@ -1,11 +1,29 @@
 import { STRAETO_API_URL, PERSISTED_QUERY_HASH, ALL_ROUTES } from '$lib/utils/constants';
-import { busLocationFromApi, type BusLocation } from '$lib/types/bus';
+import { busLocationFromApi, type ApiResult, type BusLocation } from '$lib/types/bus';
 
 export class StraetoApiError extends Error {
 	constructor(message: string) {
 		super(message);
 		this.name = 'StraetoApiError';
 	}
+}
+
+function validateApiResult(r: Record<string, unknown>): ApiResult | null {
+	if (typeof r.busId !== 'string' || !r.busId) return null;
+	if (typeof r.routeNr !== 'string' && typeof r.routeNr !== 'number') return null;
+	if (typeof r.tripId !== 'string') return null;
+	if (typeof r.lat !== 'number' || !isFinite(r.lat) || r.lat < -90 || r.lat > 90) return null;
+	if (typeof r.lng !== 'number' || !isFinite(r.lng) || r.lng < -180 || r.lng > 180) return null;
+	if (typeof r.direction !== 'number') return null;
+	return {
+		busId: String(r.busId),
+		routeNr: String(r.routeNr),
+		tripId: String(r.tripId),
+		lat: r.lat,
+		lng: r.lng,
+		direction: r.direction,
+		headsign: typeof r.headsign === 'string' ? r.headsign : null,
+	};
 }
 
 /**
@@ -52,6 +70,12 @@ export async function fetchBusLocations(): Promise<[number, BusLocation[]]> {
 	const results = busLocationByRoute.results;
 	if (!Array.isArray(results)) throw new StraetoApiError('Response missing "results" field');
 
-	const buses = results.map((r: Record<string, unknown>) => busLocationFromApi(r as never, timestamp));
+	const buses: BusLocation[] = [];
+	for (const r of results) {
+		const validated = validateApiResult(r as Record<string, unknown>);
+		if (validated) {
+			buses.push(busLocationFromApi(validated, timestamp));
+		}
+	}
 	return [timestamp, buses];
 }

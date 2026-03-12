@@ -34,39 +34,41 @@ export class SpeedLimitService {
 
 		const segments = geoJson.features
 			.filter((f) => f.properties.GOTUFLOKKUR !== 5)
+			.filter((f) => typeof f.properties.HRADI === 'number' && f.properties.HRADI > 0)
 			.map(parseSegment);
 
 		for (const seg of segments) {
-			const coords = seg.coordinates;
-			for (let i = 0; i < coords.length - 1; i++) {
-				const [aLng, aLat] = coords[i];
-				const [bLng, bLat] = coords[i + 1];
-				const edge: SegmentEdge = {
-					aLat, aLng, bLat, bLng,
-					speedLimitKmh: seg.speedLimitKmh,
-					name: seg.name,
-				};
-				this.edgeCount++;
+			for (const coords of seg.coordinateGroups) {
+				for (let i = 0; i < coords.length - 1; i++) {
+					const [aLng, aLat] = coords[i];
+					const [bLng, bLat] = coords[i + 1];
+					const edge: SegmentEdge = {
+						aLat, aLng, bLat, bLng,
+						speedLimitKmh: seg.speedLimitKmh,
+						name: seg.name,
+					};
+					this.edgeCount++;
 
-				// Insert edge into every grid cell it touches
-				const minLat = Math.min(aLat, bLat);
-				const maxLat = Math.max(aLat, bLat);
-				const minLng = Math.min(aLng, bLng);
-				const maxLng = Math.max(aLng, bLng);
-				const latStart = Math.floor(minLat / GRID_LAT_STEP);
-				const latEnd = Math.floor(maxLat / GRID_LAT_STEP);
-				const lngStart = Math.floor(minLng / GRID_LNG_STEP);
-				const lngEnd = Math.floor(maxLng / GRID_LNG_STEP);
+					// Insert edge into every grid cell it touches
+					const minLat = Math.min(aLat, bLat);
+					const maxLat = Math.max(aLat, bLat);
+					const minLng = Math.min(aLng, bLng);
+					const maxLng = Math.max(aLng, bLng);
+					const latStart = Math.floor(minLat / GRID_LAT_STEP);
+					const latEnd = Math.floor(maxLat / GRID_LAT_STEP);
+					const lngStart = Math.floor(minLng / GRID_LNG_STEP);
+					const lngEnd = Math.floor(maxLng / GRID_LNG_STEP);
 
-				for (let gLat = latStart; gLat <= latEnd; gLat++) {
-					for (let gLng = lngStart; gLng <= lngEnd; gLng++) {
-						const key = `${gLat},${gLng}`;
-						let bucket = this.grid.get(key);
-						if (!bucket) {
-							bucket = [];
-							this.grid.set(key, bucket);
+					for (let gLat = latStart; gLat <= latEnd; gLat++) {
+						for (let gLng = lngStart; gLng <= lngEnd; gLng++) {
+							const key = `${gLat},${gLng}`;
+							let bucket = this.grid.get(key);
+							if (!bucket) {
+								bucket = [];
+								this.grid.set(key, bucket);
+							}
+							bucket.push(edge);
 						}
-						bucket.push(edge);
 					}
 				}
 			}
@@ -127,23 +129,20 @@ function parseSegment(feature: GeoJsonFeature): SpeedLimitSegment {
 	const type = geometry.type;
 	const rawCoords = geometry.coordinates;
 
-	let coords: [number, number][];
+	let coordinateGroups: [number, number][][];
 	if (type === 'MultiLineString') {
-		coords = [];
-		for (const lineString of rawCoords as number[][][]) {
-			for (const point of lineString) {
-				coords.push([point[0], point[1]]);
-			}
-		}
+		coordinateGroups = (rawCoords as number[][][]).map((lineString) =>
+			lineString.map((point) => [point[0], point[1]] as [number, number]),
+		);
 	} else {
-		coords = (rawCoords as number[][]).map((c) => [c[0], c[1]]);
+		coordinateGroups = [(rawCoords as number[][]).map((c) => [c[0], c[1]] as [number, number])];
 	}
 
 	return {
 		objectId: (props.OBJECTID ?? feature.id) as number,
 		name: props.NAFN as string | undefined,
 		speedLimitKmh: props.HRADI as number,
-		coordinates: coords,
+		coordinateGroups,
 	};
 }
 
