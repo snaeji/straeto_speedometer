@@ -90,9 +90,13 @@
 		chart = echarts.init(chartEl, undefined, { renderer: 'canvas' });
 
 		// Hover: show ghost dot on map at GPS position for hovered time
-		chart.on('mousemove', (params: any) => {
-			if (params.componentType === 'series' && params.value) {
-				const closest = findClosestRecord(history, params.value[0]);
+		// Use ZRender-level event so it fires everywhere on the canvas,
+		// not just on series elements (which are absent with symbol: 'none').
+		chart.getZr().on('mousemove', (e: any) => {
+			const pointInPixel = [e.offsetX, e.offsetY];
+			if (chart!.containPixel('grid', pointInPixel)) {
+				const xVal = chart!.convertFromPixel({ xAxisIndex: 0 }, pointInPixel)[0];
+				const closest = findClosestRecord(history, xVal);
 				if (closest && closest.timestamp !== lastHoveredTs) {
 					lastHoveredTs = closest.timestamp;
 					busStore.setHoveredHistoryPoint({
@@ -101,9 +105,14 @@
 						speedKmh: closest.speedKmh ?? 0,
 					});
 				}
+			} else {
+				if (lastHoveredTs !== null) {
+					lastHoveredTs = null;
+					busStore.setHoveredHistoryPoint(null);
+				}
 			}
 		});
-		chart.on('globalout', () => {
+		chart.getZr().on('mouseout', () => {
 			lastHoveredTs = null;
 			busStore.setHoveredHistoryPoint(null);
 		});

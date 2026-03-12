@@ -110,10 +110,20 @@
 				});
 			}
 
-			// Bus trail lines source
+			// Bus trail lines source — seed with a DEBUG test line
 			map.addSource('bus-trails', {
 				type: 'geojson',
-				data: { type: 'FeatureCollection', features: [] },
+				data: {
+					type: 'FeatureCollection',
+					features: [{
+						type: 'Feature',
+						geometry: {
+							type: 'LineString',
+							coordinates: [[-21.93, 64.14], [-21.88, 64.13]],
+						},
+						properties: { color: '#ff00ff', opacity: 1 },
+					}],
+				},
 			});
 
 			map.addLayer({
