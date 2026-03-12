@@ -392,8 +392,8 @@ export class KalmanSpeedCalculator {
 		);
 
 		// Velocity in degrees/ms for blend extrapolation
-		const preVlng = (state.xAxis.v / LNG_DEG_TO_M) * 1000;
-		const preVlat = (state.yAxis.v / LAT_DEG_TO_M) * 1000;
+		const preVlng = state.xAxis.v / LNG_DEG_TO_M / 1000;
+		const preVlat = state.yAxis.v / LAT_DEG_TO_M / 1000;
 
 		// Predict
 		const predX = kalmanPredict(state.xAxis, dtS);
