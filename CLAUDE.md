@@ -158,10 +158,10 @@ The dataset is small enough (~10K segments) that brute-force nearest-segment sea
 
 ### Speed Calculation Pipeline
 
-**Critical constraint: Never overestimate bus speed.** GPS noise systematically overestimates distance (and therefore speed) due to the mathematical property that random position errors always add apparent distance. At 50 km/h with typical GPS error (~4-5m sigma), raw Haversine can overestimate by +5 to +14 km/h. A stationary bus can show 5-12 km/h phantom speed.
+**Critical constraint: Never overestimate bus speed.** GPS noise systematically overestimates distance (and therefore speed) due to the mathematical property that random position errors always add apparent distance. At 50 km/h with typical GPS error (~2.5m sigma), raw Haversine can overestimate by +5 to +14 km/h. A stationary bus can show 5-12 km/h phantom speed.
 
 **GPS noise context for Reykjavík:**
-- Typical GPS position error: sigma ~3-5 meters (standard deviation per axis)
+- Typical GPS position error: sigma ~1.5-3.0 meters (moving), ~0.6m (stationary) — empirically measured
 - High latitude (64°N) degrades GPS geometry (satellites cluster toward southern sky), partially mitigated by GLONASS
 - Urban canyon effects are mild (low-rise city) — adds ~1-3m in dense downtown
 - Coordinate conversion at 64°N: 1° lat ≈ 111 km, 1° lng ≈ 48.6 km
@@ -179,9 +179,9 @@ Raw GPS fix
   |
   v
 [Step 2] MINIMUM DISTANCE THRESHOLD
-  - If distance between consecutive fixes < 10m → report speed as 0
+  - If distance between consecutive fixes < 3m → report speed as 0
   - Eliminates phantom speed for stationary/very slow buses
-  - At 5s intervals this means speeds below ~7 km/h are reported as 0
+  - At 2s intervals this means speeds below ~5 km/h are reported as 0
     (acceptable — speed violations only matter at higher speeds)
   |
   v
@@ -195,29 +195,24 @@ Raw GPS fix
   |
   v
 [Step 4] CONSERVATIVE SPEED FACTOR
-  - Multiply computed speed by 0.92
+  - Multiply computed speed by 0.95
   - Compensates for the remaining systematic GPS overestimation bias
-  - Tunable: increase to 0.94-0.95 if underestimation is too aggressive,
-    decrease to 0.90 if any overestimation is observed in testing
+  - Tunable: may increase to 0.97-0.98 after validating improved sigma calibration
   |
   v
 Final speed estimate
 ```
 
-**Expected accuracy after pipeline:**
+**Expected accuracy after Kalman pipeline:**
 
 | True Speed | Raw Haversine (avg) | After Pipeline (avg) | 95th Percentile |
 |---|---|---|---|
 | 0 km/h (stationary) | ~6 km/h | 0 km/h | 0 km/h |
-| 20 km/h | ~23 km/h | ~17 km/h | ~21 km/h |
-| 50 km/h | ~52 km/h | ~44 km/h | ~49 km/h |
-| 70 km/h | ~72 km/h | ~62 km/h | ~67 km/h |
+| 20 km/h | ~23 km/h | ~19 km/h | ~22 km/h |
+| 50 km/h | ~52 km/h | ~47 km/h | ~52 km/h |
+| 70 km/h | ~72 km/h | ~66 km/h | ~72 km/h |
 
-**Why not a Kalman filter:**
-- The simple pipeline achieves the "never overestimate" goal more transparently
-- Kalman filter behavior depends on tuning parameters that are hard to validate
-- The pipeline's bias is predictable and mathematically reasoned about
-- Kalman filter is a valid upgrade path later if more accuracy is needed
+**Kalman Implementation:** The system uses a per-axis 2D Kalman filter (constant velocity model) for speed estimation and 60fps map animation. Design details in `docs/kalman-filter-design.md`. The simple buffer pipeline (`speed-calculator.ts`) is kept for reference but unused.
 
 **Violation detection:** `speed > speedLimit` (after pipeline). Since the pipeline already underestimates, any detected violation is a genuine violation with high confidence. A bus showing 52 km/h in a 50 zone after the pipeline is truly going significantly faster than 50.
 

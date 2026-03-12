@@ -70,7 +70,7 @@ function catmullRom(t: number, p0: number, p1: number, p2: number, p3: number): 
 
 ### Dead Reckoning
 - Extrapolate position from last known velocity + bearing
-- Error grows linearly with time (~2-5m after 2 seconds with ~5m GPS error)
+- Error grows linearly with time (~1-3m after 2 seconds with ~2.5m GPS error)
 - Must blend corrections when new GPS fix arrives (ease over 200-500ms)
 - **Best for**: Filling gaps between GPS fixes without display delay
 
@@ -78,7 +78,7 @@ function catmullRom(t: number, p0: number, p1: number, p2: number, p3: number): 
 - Use the Kalman predict step (constant velocity extrapolation) at 60fps
 - Position: `p + v × dt`
 - Naturally smooth between measurements
-- Small correction (~4m) when measurement arrives — needs blend window
+- Small correction (~2m) when measurement arrives — needs blend window
 - **Best for**: Real-time tracking without display delay
 
 ## Chosen Approach: Kalman Prediction with Correction Blending
@@ -97,13 +97,15 @@ function catmullRom(t: number, p0: number, p1: number, p2: number, p3: number): 
 ### Correction Blending
 When a GPS fix arrives and the Kalman update runs:
 1. Record pre-update predicted position + velocity
-2. Run Kalman update (position jumps ~4m)
+2. Run Kalman update (position jumps ~2m)
 3. For next 400ms: smoothly blend from old trajectory to new trajectory
 4. After 400ms: pure Kalman prediction
 
 ```
 displayPos = lerp(oldTrajectory, newTrajectory, easeOutCubic(elapsed / 400ms))
 ```
+
+Note: The blend velocity extrapolation had a unit bug (x1000 instead of /1000) fixed in commit a0ca910. Blend corrections now work as designed.
 
 ### Prediction Safety
 - Cap extrapolation at 5 seconds

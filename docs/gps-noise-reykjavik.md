@@ -1,7 +1,7 @@
 # GPS Noise Characteristics at Reykjavik (64°N)
 
 ## Position Error
-- Typical sigma: ~3-5 meters per axis (standard deviation)
+- Typical sigma: ~1.5-3.0 meters per axis (moving), ~0.6m (stationary). Based on empirical analysis of 977K GPS records.
 - High latitude (64°N) degrades GPS geometry — satellites cluster toward southern sky
 - Partially mitigated by GLONASS constellation
 - Urban canyon effects are mild (Reykjavik is low-rise) — adds ~1-3m in dense downtown
@@ -17,22 +17,22 @@
 GPS noise **always** adds apparent distance:
 - Random position errors in any direction increase the measured path length
 - This is a mathematical property — noise cannot reduce apparent distance
-- At 50 km/h with 5m GPS sigma: raw Haversine overestimates by +5 to +14 km/h
-- A stationary bus shows 5-12 km/h phantom speed
+- At 50 km/h with ~2.5m GPS sigma: raw Haversine overestimates by +2 to +6 km/h
+- A stationary bus shows 1-5 km/h phantom speed (empirical P95: 1.89 km/h raw)
 
-### Overestimation by True Speed (with ~5m sigma, ~3s intervals)
+### Overestimation by True Speed (with ~2.5m sigma, ~5s intervals)
 | True Speed | Raw Haversine Mean | Overestimation |
 |---|---|---|
-| 0 km/h | ~6 km/h | infinite |
-| 20 km/h | ~23 km/h | +15% |
-| 50 km/h | ~52 km/h | +4-10% |
-| 70 km/h | ~72 km/h | +3-6% |
+| 0 km/h | ~2 km/h | infinite |
+| 20 km/h | ~21 km/h | +5% |
+| 50 km/h | ~51 km/h | +2% |
+| 70 km/h | ~71 km/h | +1-3% |
 
 ## Straeto API Coordinate Precision
 From sample data analysis:
 - 44% of coordinates have 13 decimal places (sub-nanometer precision — API artifact)
 - Remaining have 6-8 decimal places
-- All well above the ~5m real GPS error tolerance
+- All well above the ~2.5m real GPS error tolerance
 - High-precision values don't indicate high-accuracy measurements
 
 ## Iceland Default Speed Limits (fallback)

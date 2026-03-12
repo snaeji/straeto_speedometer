@@ -46,7 +46,7 @@
 | Max | 877.3m |
 | <10m | 71.1% |
 
-**Key insight**: 71.1% of consecutive fixes are <10m apart. Most buses are barely moving or stationary between fixes. The 10m minimum distance threshold in the pipeline correctly identifies these.
+**Key insight**: 71.1% of consecutive fixes are <10m apart. The 3m minimum distance threshold in the pipeline filters stationary readings while preserving slow-speed data that the old 10m threshold would clip. The 3m minimum distance threshold catches truly stationary buses while allowing slow-speed readings through (the old 10m threshold had a 24.69% false positive rate).
 
 ### Raw Haversine Speeds (km/h)
 | Percentile | Speed |

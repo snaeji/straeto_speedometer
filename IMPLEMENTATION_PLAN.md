@@ -187,9 +187,9 @@ All magic numbers and configuration in one place:
 - `outlierMaxDistanceM = 500.0` (Step 1: max distance between consecutive fixes)
 - `outlierMaxSpeedKmh = 120.0` (Step 1: impossible speed threshold)
 - `outlierMinTimeGapS = 1` (Step 1: minimum time between fixes)
-- `minDistanceThresholdM = 10.0` (Step 2: below this, speed = 0)
+- `minDistanceThresholdM = 3.0` (Step 2: below this, speed = 0)
 - `smoothingBufferSize = 3` (Step 3: number of positions to average)
-- `conservativeSpeedFactor = 0.92` (Step 4: multiplicative bias correction)
+- `conservativeSpeedFactor = 0.95` (Step 4: multiplicative bias correction)
 - `defaultSpeedLimitKmh = 50.0` (fallback when no road segment found)
 - `maxSpeedLimitSearchDistanceM = 50.0` (max distance to match a road segment)
 - `reykjavikLatDegToKm = 111.0` (1 degree latitude in km at 64N)
@@ -352,7 +352,7 @@ The `processFix` method implements:
 - If no previous fix, store this as first fix, return location with `speedKmh = 0`
 
 **Step 2 -- Minimum Distance Threshold:**
-- If distance between this fix and previous fix < 10m, set `speedKmh = 0` on the result
+- If distance between this fix and previous fix < 3m, set `speedKmh = 0` on the result
 - Still add the fix to the buffer (it's valid, just stationary)
 
 **Step 3 -- Position Smoothing:**
@@ -363,7 +363,7 @@ The `processFix` method implements:
 - Store the current smoothed position for next iteration
 
 **Step 4 -- Conservative Speed Factor:**
-- Multiply the speed from Step 3 by 0.92
+- Multiply the speed from Step 3 by 0.95
 - This is the final `speedKmh` value
 
 Special case: if `speedKmh` was set to 0 in Step 2, skip Steps 3-4 (keep it at 0).
@@ -426,11 +426,11 @@ Test cases:
 Test cases:
 - First fix for a bus returns speedKmh = 0
 - Stationary bus (same coordinates, different timestamps) returns speedKmh = 0
-- Normal movement returns reasonable speed (check it's less than raw Haversine due to 0.92 factor)
+- Normal movement returns reasonable speed (check it's less than raw Haversine due to 0.95 factor)
 - Outlier rejection: >500m jump returns null
 - Outlier rejection: >120 km/h returns null
 - Outlier rejection: <1s time gap returns null
-- Minimum distance threshold: <10m movement returns speedKmh = 0
+- Minimum distance threshold: <3m movement returns speedKmh = 0
 - Smoothing: verify buffer fills to 3, speed stabilizes
 - Reset: after resetBus(), next fix returns speedKmh = 0
 

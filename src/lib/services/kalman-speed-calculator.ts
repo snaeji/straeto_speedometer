@@ -43,14 +43,15 @@ const STALE_THRESHOLD_M = 1.0;
 // Stationarity: require this many consecutive REAL updates with small
 // displacement before confirming the bus is stopped
 const REAL_STATIONARY_COUNT = 3;
-const REAL_STATIONARY_DIST_M = 5.0;
+const REAL_STATIONARY_DIST_M = 3.0; // Empirical stationary P99=4.95m — 5.0 was too close to threshold
 
 // Acceleration limits for physical plausibility (m/s²)
 const MAX_ACCEL_MS2 = 3.0; // city bus max acceleration
 const MAX_DECEL_MS2 = 5.0; // city bus max braking
 
-// Output smoothing EMA alpha (0-1, lower = smoother)
-const SPEED_EMA_ALPHA = 0.4;
+// Output smoothing EMA alpha (0-1, higher = more responsive). Raised from 0.4 to reduce
+// double-smoothing latency (Kalman already smooths, EMA on top added 15-20s lag)
+const SPEED_EMA_ALPHA = 0.6;
 
 // ── Per-axis Kalman state ──────────────────────────────────────────────
 

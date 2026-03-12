@@ -17,8 +17,8 @@ export const OUTLIER_MAX_DISTANCE_M = 500.0;
 export const OUTLIER_MAX_SPEED_KMH = 120.0;
 export const OUTLIER_MIN_TIME_GAP_S = 1;
 
-// Step 2: Minimum distance threshold
-export const MIN_DISTANCE_THRESHOLD_M = 10.0;
+// Step 2: Minimum distance threshold (legacy pipeline only, Kalman uses REAL_STATIONARY_DIST_M)
+export const MIN_DISTANCE_THRESHOLD_M = 3.0;
 export const STATIONARY_CONFIRM_COUNT = 2; // Consecutive sub-threshold readings before confirming stopped
 
 // Step 3: Speed smoothing
@@ -47,13 +47,13 @@ export const MAP_CENTER: [number, number] = [-21.9, 64.135];
 export const MAP_ZOOM = 12;
 
 // Kalman filter parameters
-export const KALMAN_SIGMA_A = 0.8; // Process noise: acceleration std dev (m/s²)
-export const KALMAN_SIGMA_GPS = 5.0; // Measurement noise: GPS position sigma (m)
+export const KALMAN_SIGMA_A = 1.0; // Process noise: acceleration std dev (m/s²). Empirical P50 absolute accel = 0.88 m/s²
+export const KALMAN_SIGMA_GPS = 2.5; // Measurement noise: GPS position sigma (m). Empirical: 0.64m stationary, 1.5-3.0m moving
 export const KALMAN_MIN_FIXES_FOR_PREDICTION = 3; // Warm-up fixes before reporting speed
 export const KALMAN_PREDICTION_CAP_S = 5.0; // Max extrapolation time (seconds)
 export const KALMAN_PREDICTION_DECAY_S = 2.0; // Velocity decay window after cap
 export const KALMAN_BLEND_DURATION_MS = 400; // Correction blend window (ms)
-export const KALMAN_ENDPOINT_BUFFER_SIZE = 6; // Position buffer for endpoint speed bound
+export const KALMAN_ENDPOINT_BUFFER_SIZE = 5; // Position buffer for endpoint speed bound
 
 // Route colors for consistent coloring
 export const ROUTE_COLORS: Record<string, string> = {};

@@ -16,12 +16,12 @@
 - Raw Haversine speed > 120 km/h → reject + reset (physically impossible)
 
 ### Step 2: Minimum Distance Threshold
-- If distance < 10m between consecutive fixes:
+- If distance < 3m between consecutive fixes:
   - Increment stationary counter
   - After 2 consecutive sub-threshold readings → confirmed stopped → speed = 0
   - Before confirmation → hold previous speed (prevents jitter)
-- At 2-4s polling, 10m threshold = ~7 km/h minimum detectable speed
-- Eliminates phantom speed from GPS noise (stationary buses show 5-12 km/h raw)
+- At 2-4s polling, 3m threshold = ~2 km/h minimum detectable speed
+- Eliminates phantom speed from GPS noise (stationary buses show 1-5 km/h raw)
 
 ### Step 3: Speed Smoothing (Dual Method)
 1. **Average speed**: Mean of all speeds in 6-reading buffer
@@ -44,7 +44,7 @@ Why two methods:
 OUTLIER_MAX_DISTANCE_M = 500.0
 OUTLIER_MAX_SPEED_KMH = 120.0
 OUTLIER_MIN_TIME_GAP_S = 1
-MIN_DISTANCE_THRESHOLD_M = 10.0
+MIN_DISTANCE_THRESHOLD_M = 3.0
 STATIONARY_CONFIRM_COUNT = 2
 SMOOTHING_BUFFER_SIZE = 6
 MIN_SPEED_READINGS = 3
@@ -87,3 +87,5 @@ CONSERVATIVE_SPEED_FACTOR = 0.95
 | 70 km/h | ~72 km/h | ~62 km/h | ~67 km/h |
 
 Pipeline systematically underestimates by 15-20%. This trades accuracy for zero false positives on violations.
+
+Note: This table reflects the legacy buffer-averaging pipeline. The active system uses the Kalman filter pipeline (`kalman-speed-calculator.ts`) which is more responsive.

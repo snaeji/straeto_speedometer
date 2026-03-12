@@ -46,17 +46,15 @@ Where σ_a is the acceleration noise standard deviation.
 
 | Parameter | Value | Rationale |
 |---|---|---|
-| σ_a | 0.8 m/s² | Urban bus acceleration (rarely >0.8 m/s² sustained) |
-| σ_gps | 5.0 m | GPS position sigma at 64°N latitude |
-| R | 25 m² | σ_gps² |
+| σ_a | 1.0 m/s² | Empirical P50 absolute acceleration = 0.88 m/s²; 1.0 provides margin |
+| σ_gps | 2.5 m | Empirical: ~0.6m stationary, ~1.5-3.0m moving; 2.5 is conservative |
+| R | 6.25 m² | σ_gps² |
 
-#### Why σ_a = 0.8 m/s² (not 1.5)
+Output speeds are further smoothed with an EMA (α=0.6) to reduce reading-to-reading noise. The Kalman filter already smooths, so a high α keeps additional latency minimal.
 
-Simulation analysis shows:
-- At σ_a = 1.5: K_pos = 0.92, barely better than raw GPS; velocity very noisy
-- At σ_a = 0.8: K_pos = 0.84, K_vel = 0.22; much better speed accuracy
-- Urban buses rarely sustain >0.8 m/s² acceleration
-- Slightly more lag on rapid speed changes, but acceptable for monitoring
+#### Why σ_a = 1.0 m/s²
+
+Empirical analysis of 977K GPS records shows P50 absolute acceleration = 0.88 m/s². Setting σ_a = 1.0 provides adequate margin without making the filter too loose.
 
 ### Predict Step (run between measurements and at 60fps for animation)
 ```
@@ -114,7 +112,7 @@ function localMToLatLng(x_meters, y_meters, refLat, refLng): { lat, lng }
 
 **Solution**: Keep the existing distance-based stationarity detection:
 - Check raw GPS displacement between consecutive fixes
-- If <10m for 2+ consecutive readings → force speed = 0
+- If <3m for 3+ consecutive readings → force speed = 0
 - This pre-filter catches stationary buses before Kalman processes them
 
 ### 2. Hybrid Speed: min(Kalman, Endpoint)
@@ -133,7 +131,7 @@ finalSpeed = min(kalmanSpeed, endpointSpeed) × 0.95
 
 ### 3. Animation Correction Blending
 
-**Problem**: At each Kalman update, position jumps ~4.2m (with K_pos ≈ 0.84, 5m GPS noise)
+**Problem**: At each Kalman update, position jumps ~2m (with K_pos ≈ 0.83, 2.5m GPS noise)
 - Visible as a jerk every 3-4 seconds
 - Raw Kalman prediction is smooth BETWEEN updates, but jerks AT updates
 
@@ -169,9 +167,9 @@ After 400ms:
 | True Speed | Kalman Mean | Kalman 95th | After Hybrid Pipeline |
 |---|---|---|---|
 | 0 km/h | 0 km/h | 0 km/h | 0 km/h (distance filter) |
-| 20 km/h | ~20.1 km/h | ~25 km/h | ~18 km/h |
-| 50 km/h | ~50.1 km/h | ~59 km/h | ~46 km/h |
-| 70 km/h | ~70.1 km/h | ~82 km/h | ~65 km/h |
+| 20 km/h | ~20 km/h | ~24 km/h | ~19 km/h |
+| 50 km/h | ~50 km/h | ~56 km/h | ~47 km/h |
+| 70 km/h | ~70 km/h | ~78 km/h | ~66 km/h |
 
 ## Implementation Files
 
