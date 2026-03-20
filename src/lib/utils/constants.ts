@@ -34,6 +34,7 @@ export const SPEED_EMA_ALPHA = 0.6; // EMA smoothing factor for speed output
 export const DEFAULT_SPEED_LIMIT_KMH = 50.0;
 export const MAX_SPEED_LIMIT_SEARCH_DISTANCE_M = 50.0;
 export const VIOLATION_GRACE_KMH = 5.0;
+export const ZONE_TRANSITION_GRACE_MS = 8000; // grace period when entering a lower speed zone
 
 // Coordinate conversion at 64 N (Reykjavik)
 export const REYKJAVIK_LAT_DEG_TO_KM = 111.0;

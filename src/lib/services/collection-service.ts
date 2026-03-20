@@ -6,7 +6,13 @@ import { SpeedLimitService } from './speed-limit-service';
 import type { GtfsService } from './gtfs-service';
 import type { RouteShapeIndex } from './route-shape-index';
 import { copyBusLocationWith, type BusLocation } from '$lib/types/bus';
-import { VIOLATION_GRACE_KMH } from '$lib/utils/constants';
+import { VIOLATION_GRACE_KMH, ZONE_TRANSITION_GRACE_MS } from '$lib/utils/constants';
+
+interface ZoneTransition {
+	prevLimit: number;
+	newLimit: number;
+	transitionTime: number; // GPS timestamp when the limit first decreased
+}
 
 export class CollectionService {
 	readonly renderer = new SplineRenderer();
@@ -14,6 +20,8 @@ export class CollectionService {
 	readonly routeAnimator = new RouteAnimator();
 	private lastUpdateByBus = new Map<string, number>();
 	private lastRouteByBus = new Map<string, string>(); // busId -> "routeNr:direction"
+	private lastLimitByBus = new Map<string, number>(); // busId -> last speed limit
+	private limitTransitions = new Map<string, ZoneTransition>(); // active zone transitions
 
 	constructor(
 		private speedLimitService: SpeedLimitService,
@@ -73,6 +81,8 @@ export class CollectionService {
 		this.routeAnimator.resetBus(busId);
 		this.lastUpdateByBus.delete(busId);
 		this.lastRouteByBus.delete(busId);
+		this.lastLimitByBus.delete(busId);
+		this.limitTransitions.delete(busId);
 	}
 
 	/** Reset all state. */
@@ -82,6 +92,8 @@ export class CollectionService {
 		this.routeAnimator.resetAll();
 		this.lastUpdateByBus.clear();
 		this.lastRouteByBus.clear();
+		this.lastLimitByBus.clear();
+		this.limitTransitions.clear();
 	}
 
 	/** Remove stale bus states that haven't been updated recently. */
@@ -89,9 +101,72 @@ export class CollectionService {
 		this.renderer.cleanupStale();
 		this.mapMatcher.cleanupStale();
 		this.routeAnimator.cleanupStale();
+		// Clean up expired zone transitions (no bus data = no natural cleanup)
+		const now = Date.now();
+		for (const [busId, transition] of this.limitTransitions) {
+			if (now - transition.transitionTime > ZONE_TRANSITION_GRACE_MS * 2) {
+				this.limitTransitions.delete(busId);
+			}
+		}
 	}
 
 	// --- Private ---
+
+	/**
+	 * Check if a bus is violating its speed limit, with zone transition grace.
+	 *
+	 * When a bus enters a zone with a LOWER speed limit, it gets a brief grace
+	 * period to decelerate. The effective limit ramps linearly from the old limit
+	 * to the new limit over ZONE_TRANSITION_GRACE_MS.
+	 *
+	 * Exception: if the bus exceeds even the OLD (higher) limit + grace, it's
+	 * flagged immediately — it was already speeding before the zone change.
+	 */
+	private checkViolation(busId: string, speed: number, currentLimit: number, timestamp: number): boolean {
+		if (speed <= 0) return false;
+
+		const prevLimit = this.lastLimitByBus.get(busId);
+		this.lastLimitByBus.set(busId, currentLimit);
+
+		// Detect zone transitions
+		if (prevLimit != null) {
+			if (currentLimit < prevLimit) {
+				// Limit decreased — start or extend grace period.
+				// For cascading drops (80→50→30), keep the highest prevLimit
+				// so the ramp covers the full deceleration envelope.
+				const existing = this.limitTransitions.get(busId);
+				this.limitTransitions.set(busId, {
+					prevLimit: existing ? Math.max(existing.prevLimit, prevLimit) : prevLimit,
+					newLimit: currentLimit,
+					transitionTime: existing ? existing.transitionTime : timestamp,
+				});
+			} else if (currentLimit > prevLimit) {
+				// Limit increased — clear any pending grace (no grace needed entering a faster zone)
+				this.limitTransitions.delete(busId);
+			}
+		}
+
+		// Check if we're in an active grace period
+		const transition = this.limitTransitions.get(busId);
+		if (transition && currentLimit === transition.newLimit) {
+			const elapsed = timestamp - transition.transitionTime;
+			if (elapsed >= 0 && elapsed < ZONE_TRANSITION_GRACE_MS) {
+				// Bus was already speeding before zone change — flag immediately
+				if (speed > transition.prevLimit + VIOLATION_GRACE_KMH) {
+					return true;
+				}
+				// Ramp effective limit from old to new over grace window
+				const t = elapsed / ZONE_TRANSITION_GRACE_MS;
+				const effectiveLimit = transition.prevLimit + (transition.newLimit - transition.prevLimit) * t;
+				return speed > effectiveLimit + VIOLATION_GRACE_KMH;
+			}
+			// Grace expired
+			this.limitTransitions.delete(busId);
+		}
+
+		// Normal case: no transition active
+		return speed > currentLimit + VIOLATION_GRACE_KMH;
+	}
 
 	private processBusFix(bus: BusLocation): BusLocation | null {
 		// Detect route/direction change
@@ -123,8 +198,9 @@ export class CollectionService {
 							snapResult.snappedLat, snapResult.snappedLng,
 						);
 						const speed = snapResult.speedKmh ?? rendererResult?.speedKmh ?? 0;
-						const isViolation = speed > 0 &&
-							speed > limitResult.speedLimitKmh + VIOLATION_GRACE_KMH;
+						const isViolation = this.checkViolation(
+							bus.busId, speed, limitResult.speedLimitKmh, bus.timestamp,
+						);
 
 						return copyBusLocationWith(bus, {
 							speedKmh: speed,
@@ -148,8 +224,9 @@ export class CollectionService {
 		if (!withSpeed) return null;
 
 		const limitResult = this.speedLimitService.getSpeedLimit(bus.lat, bus.lng);
-		const isViolation =
-			withSpeed.speedKmh != null && withSpeed.speedKmh > limitResult.speedLimitKmh + VIOLATION_GRACE_KMH;
+		const isViolation = this.checkViolation(
+			bus.busId, withSpeed.speedKmh ?? 0, limitResult.speedLimitKmh, bus.timestamp,
+		);
 
 		return copyBusLocationWith(withSpeed, {
 			speedLimitKmh: limitResult.speedLimitKmh,
