@@ -273,10 +273,13 @@ async function main() {
 		case 'switch-mode': {
 				// Switch mode and optionally screenshot
 				const mode = args[0]; // live, playback, stats, heatmap
-				const modeMap = { live: 3, playback: 4, stats: 5, heatmap: 6 };
-				const idx = modeMap[mode];
-				if (idx == null) { console.error('Usage: switch-mode <live|playback|stats|heatmap>'); process.exit(1); }
-				await page.evaluate((i) => document.querySelectorAll('button')[i]?.click(), idx);
+				const modeNames = { live: 'Live', playback: 'Playback', stats: 'Stats', heatmap: 'Heatmap' };
+				const label = modeNames[mode];
+				if (!label) { console.error('Usage: switch-mode <live|playback|stats|heatmap>'); process.exit(1); }
+				await page.evaluate((name) => {
+					const btn = Array.from(document.querySelectorAll('button')).find(b => b.textContent?.trim() === name);
+					if (btn) btn.click();
+				}, label);
 				console.log(`Switched to ${mode}`);
 
 				if (args[1]) {
