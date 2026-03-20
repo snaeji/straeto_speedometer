@@ -7,18 +7,22 @@
     "dev": "vite dev",
     "build": "vite build",
     "preview": "vite preview",
-    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "format": "prettier --write 'src/**/*.{svelte,ts,js,css}'"
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "^3.0.8",
     "@sveltejs/kit": "^2.15.0",
     "@sveltejs/vite-plugin-svelte": "^5.0.0",
     "@tailwindcss/vite": "^4.1.0",
+    "prettier": "^3.8.1",
+    "prettier-plugin-svelte": "^3.5.1",
     "puppeteer-core": "^24.39.0",
     "svelte": "^5.0.0",
     "svelte-check": "^4.0.0",
     "tailwindcss": "^4.1.0",
     "typescript": "^5.7.0",
+    "typescript-language-server": "^5.1.3",
     "vite": "^6.0.0"
   },
   "dependencies": {

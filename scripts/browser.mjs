@@ -16,6 +16,7 @@
  */
 
 import puppeteer from 'puppeteer-core';
+import fs from 'fs';
 import { existsSync, writeFileSync, readFileSync, unlinkSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -23,11 +24,45 @@ import { execSync } from 'child_process';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const APP_URL = 'http://localhost:5173';
-const CHROME_PATH = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const WS_FILE = join(__dirname, '.browser-ws');
+
+function findChrome() {
+	// 1. Explicit env override
+	if (process.env.CHROME_PATH) return process.env.CHROME_PATH;
+
+	// 2. Standard macOS Chrome
+	const macChrome = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+	if (existsSync(macChrome)) return macChrome;
+
+	// 3. Puppeteer's bundled Chrome for Testing
+	const cacheDir = join(process.env.HOME || '', '.cache', 'puppeteer', 'chrome');
+	if (existsSync(cacheDir)) {
+		const versions = fs.readdirSync(cacheDir).filter(d => d.startsWith('mac')).sort().reverse();
+		for (const v of versions) {
+			const candidates = [
+				join(cacheDir, v, 'chrome-mac-x64', 'Google Chrome for Testing.app', 'Contents', 'MacOS', 'Google Chrome for Testing'),
+				join(cacheDir, v, 'chrome-mac-arm64', 'Google Chrome for Testing.app', 'Contents', 'MacOS', 'Google Chrome for Testing'),
+			];
+			for (const c of candidates) {
+				if (existsSync(c)) return c;
+			}
+		}
+	}
+
+	// 4. Linux/CI fallbacks
+	for (const p of ['/usr/bin/google-chrome', '/usr/bin/chromium-browser', '/usr/bin/chromium']) {
+		if (existsSync(p)) return p;
+	}
+
+	throw new Error('No Chrome binary found. Set CHROME_PATH env var or install Chrome.');
+}
+
+const CHROME_PATH = findChrome();
 const SCREENSHOT_DIR = '/tmp';
 const VIEWPORT = { width: 1440, height: 900 };
 const DEBUG_PORT = 9222;
+// Use headed mode only when explicitly requested (HEADED=1)
+const HEADLESS = !process.env.HEADED;
 
 async function connectOrLaunch() {
 	// Try reconnecting to an existing browser
@@ -39,7 +74,8 @@ async function connectOrLaunch() {
 			let page = pages.find(p => p.url().includes('localhost:5173'));
 			if (!page) {
 				page = await browser.newPage();
-				await page.goto(APP_URL, { waitUntil: 'networkidle0', timeout: 15000 });
+				await page.setViewport(VIEWPORT);
+				await page.goto(APP_URL, { waitUntil: 'domcontentloaded', timeout: 15000 });
 			}
 			return { browser, page };
 		} catch {
@@ -49,18 +85,23 @@ async function connectOrLaunch() {
 	}
 
 	// Launch Chrome as a detached process with remote debugging
-	// Use a separate user-data-dir so it doesn't merge with existing Chrome
 	const userDataDir = join(__dirname, '.chrome-profile');
 	const { spawn } = await import('child_process');
-	const chromeProc = spawn(CHROME_PATH, [
+	const chromeArgs = [
 		`--remote-debugging-port=${DEBUG_PORT}`,
 		`--user-data-dir=${userDataDir}`,
 		`--window-size=${VIEWPORT.width},${VIEWPORT.height + 100}`,
-		'--window-position=0,25',
 		'--no-first-run',
 		'--no-default-browser-check',
-		APP_URL,
-	], {
+	];
+	if (HEADLESS) {
+		chromeArgs.push('--headless=new', '--disable-gpu');
+	} else {
+		chromeArgs.push('--window-position=0,25');
+	}
+	chromeArgs.push(APP_URL);
+
+	const chromeProc = spawn(CHROME_PATH, chromeArgs, {
 		detached: true,
 		stdio: 'ignore',
 	});
@@ -83,13 +124,24 @@ async function connectOrLaunch() {
 	writeFileSync(WS_FILE, wsEndpoint);
 
 	const browser = await puppeteer.connect({ browserWSEndpoint: wsEndpoint, defaultViewport: null });
-	const pages = await browser.pages();
-	let page = pages.find(p => p.url().includes('localhost:5173'));
+
+	// Chrome was launched with APP_URL but may still be loading — poll for it
+	let page = null;
+	for (let i = 0; i < 20; i++) {
+		const pages = await browser.pages();
+		page = pages.find(p => p.url().includes('localhost:5173'));
+		if (page) break;
+		await new Promise(r => setTimeout(r, 500));
+	}
 
 	if (!page) {
-		page = pages[0] || await browser.newPage();
-		await page.goto(APP_URL, { waitUntil: 'networkidle0', timeout: 15000 });
+		page = (await browser.pages())[0] || await browser.newPage();
+		await page.setViewport(VIEWPORT);
+		await page.goto(APP_URL, { waitUntil: 'domcontentloaded', timeout: 15000 });
 	}
+
+	// Ensure viewport is set for headless screenshots
+	await page.setViewport(VIEWPORT);
 
 	return { browser, page };
 }
@@ -119,10 +171,18 @@ async function main() {
 
 	const { browser, page } = await connectOrLaunch();
 
+	// Helper: wait for the app to be visually ready
+	async function waitForApp() {
+		await page.waitForSelector('button', { timeout: 5000 }).catch(() => {});
+		// Let the renderer settle after viewport/navigation changes
+		await new Promise(r => setTimeout(r, 500));
+	}
+
 	try {
 		switch (cmd) {
 			case 'screenshot': {
 				const file = args[0] || join(SCREENSHOT_DIR, `straeto-${Date.now()}.png`);
+				await waitForApp();
 				await page.screenshot({ path: file, fullPage: false });
 				console.log(file);
 				break;
