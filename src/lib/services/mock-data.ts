@@ -19,6 +19,7 @@ async function loadSampleData(): Promise<void> {
 
 	loading = (async () => {
 		const res = await fetch('/sample.jsonl');
+		if (!res.ok) throw new Error(`Failed to load sample data: ${res.status} ${res.statusText}`);
 		const text = await res.text();
 		const lines = text.trim().split('\n');
 
@@ -26,7 +27,8 @@ async function loadSampleData(): Promise<void> {
 		const byTimestamp = new Map<number, BusLocation[]>();
 		for (const line of lines) {
 			if (!line) continue;
-			const json: JsonLineRecord = JSON.parse(line);
+			let json: JsonLineRecord;
+			try { json = JSON.parse(line); } catch { continue; }
 			const loc = busLocationFromJsonLine(json);
 			let group = byTimestamp.get(loc.timestamp);
 			if (!group) {

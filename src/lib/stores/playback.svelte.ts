@@ -81,6 +81,8 @@ class PlaybackStore {
 
 	async seekTo(timestamp: number) {
 		this.currentTimestamp = Math.max(this.startTimestamp, Math.min(this.endTimestamp, timestamp));
+		// Reset animation buffers so stale segment state doesn't produce jerky positions
+		collectionStore.collectionService?.resetAll();
 		const version = ++this.seekVersion;
 		await this.loadCurrentFrame(version);
 	}
