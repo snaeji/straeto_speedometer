@@ -12,8 +12,8 @@ export const ALL_ROUTES = [
 
 export const POLLING_INTERVAL_MS = 2000;
 
-// Outlier rejection
-export const OUTLIER_MAX_SPEED_KMH = 120.0;
+// Outlier rejection (city buses are governed; 90 km/h filters GPS spikes while allowing highway speeds)
+export const OUTLIER_MAX_SPEED_KMH = 90.0;
 
 // Conservative speed factor
 export const CONSERVATIVE_SPEED_FACTOR = 0.95;

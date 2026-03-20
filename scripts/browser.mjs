@@ -151,7 +151,7 @@ async function main() {
 
 	if (!cmd) {
 		console.log('Usage: node scripts/browser.mjs <command> [args]');
-		console.log('Commands: screenshot, click, eval, wait, start-recording, stop-recording, reset');
+		console.log('Commands: screenshot, click, eval, wait, start-recording, stop-recording, play-pause, switch-mode, reset');
 		process.exit(0);
 	}
 
@@ -267,6 +267,27 @@ async function main() {
 					return false;
 				}, text);
 				console.log(found ? `Clicked: "${text}"` : `Button "${text}" not found`);
+				break;
+			}
+
+		case 'play-pause': {
+				const clicked = await page.evaluate(() => {
+					// Find the play/pause button by looking for transport-control SVGs in the bottom playback bar
+					const btns = Array.from(document.querySelectorAll('button'));
+					const playBtn = btns.find(b => {
+						const svg = b.querySelector('svg');
+						if (!svg) return false;
+						// Play icon has "M8 5v14l11-7z", Pause icon has "M6 19h4V5H6v14zm8-14v14h4V5h-4z"
+						const paths = b.querySelectorAll('path');
+						return Array.from(paths).some(p => {
+							const d = p.getAttribute('d') || '';
+							return d.includes('8 5v14') || d.includes('6 4h4v16');
+						});
+					});
+					if (playBtn) { playBtn.click(); return true; }
+					return false;
+				});
+				console.log(clicked ? 'Toggled play/pause' : 'Play button not found');
 				break;
 			}
 

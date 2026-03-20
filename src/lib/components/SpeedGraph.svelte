@@ -5,6 +5,7 @@
 	import { collectionStore } from '$lib/stores/collection.svelte';
 	import { formatTime } from '$lib/utils/format';
 	import type { BusLocation } from '$lib/types/bus';
+	import { VIOLATION_GRACE_KMH } from '$lib/utils/constants';
 
 	let { expanded = $bindable(false), chartBarLeft = 12 }: { expanded: boolean; chartBarLeft: number } = $props();
 
@@ -47,6 +48,11 @@
 		if (sec < 3600) return `${Math.round(sec / 60)}m`;
 		return `${(sec / 3600).toFixed(1)}h`;
 	});
+
+	function formatHeading(deg: number): string {
+		const dirs = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+		return dirs[Math.round(deg / 45) % 8] + ` ${Math.round(deg)}°`;
+	}
 
 	function polarToXY(cx: number, cy: number, r: number, angleDeg: number) {
 		const rad = ((angleDeg - 210) * Math.PI) / 180;
@@ -338,9 +344,9 @@
 		for (let i = 0; i < speeds.length; i++) {
 			const [t, s] = speeds[i];
 			const l = limits[i]?.[1] ?? 50;
-			if (s > l && regionStart === null) {
+			if (s > l + VIOLATION_GRACE_KMH && regionStart === null) {
 				regionStart = t;
-			} else if (s <= l && regionStart !== null) {
+			} else if (s <= l + VIOLATION_GRACE_KMH && regionStart !== null) {
 				violationRegions.push([{ xAxis: regionStart }, { xAxis: t }]);
 				regionStart = null;
 			}
@@ -578,8 +584,8 @@
 					<div class="text-xs font-bold font-mono tabular-nums {violationCount > 0 ? 'text-danger' : 'text-text-primary'}">{violationCount}</div>
 				</div>
 				<div>
-					<div class="text-[8px] uppercase tracking-wider text-text-muted">Direction</div>
-					<div class="text-xs font-mono tabular-nums text-text-primary">{selectedBus.direction != null ? `${selectedBus.direction}°` : '--'}</div>
+					<div class="text-[8px] uppercase tracking-wider text-text-muted">Heading</div>
+					<div class="text-xs font-mono tabular-nums text-text-primary">{selectedBus.direction != null ? formatHeading(selectedBus.direction) : '--'}</div>
 				</div>
 				<div>
 					<div class="text-[8px] uppercase tracking-wider text-text-muted">Records</div>

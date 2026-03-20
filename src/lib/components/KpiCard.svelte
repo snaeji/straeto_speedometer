@@ -20,32 +20,6 @@
 	};
 
 	let isDanger = $derived(variant === 'danger' && value > 0);
-
-	// Smooth animated value display
-	let displayValue = $state(value);
-	let animFrame = 0;
-
-	$effect(() => {
-		const target = value;
-		const start = displayValue;
-		if (start === target) {
-			if (animFrame) cancelAnimationFrame(animFrame);
-			return;
-		}
-
-		const startTime = performance.now();
-		const duration = 400;
-
-		function tick() {
-			const elapsed = performance.now() - startTime;
-			const t = Math.min(elapsed / duration, 1);
-			const ease = 1 - Math.pow(1 - t, 3);
-			displayValue = Math.round(start + (target - start) * ease);
-			if (t < 1) animFrame = requestAnimationFrame(tick);
-		}
-		cancelAnimationFrame(animFrame);
-		animFrame = requestAnimationFrame(tick);
-	});
 </script>
 
 <div
@@ -71,7 +45,7 @@
 				{isDanger ? 'text-danger' : 'text-text-primary'}"
 				style={isDanger ? 'text-shadow: 0 0 12px rgba(239,68,68,0.4);' : ''}
 			>
-				{displayValue}
+				{value}
 			</span>
 			{#if unit}
 				<span class="text-[9px] text-text-muted">{unit}</span>
