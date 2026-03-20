@@ -44,6 +44,8 @@ class PlaybackStore {
 		if (this.isPlaying || !this.hasData) return;
 		this.isPlaying = true;
 
+		// Reset pipeline state so stale live data doesn't affect playback
+		collectionStore.collectionService?.resetAll();
 		// Set renderer time source to playback time
 		collectionStore.setTimeSource(() => this.currentTimestamp);
 

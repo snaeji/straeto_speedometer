@@ -55,6 +55,10 @@ export async function fetchBusLocations(): Promise<[number, BusLocation[]]> {
 
 	const json = await response.json();
 
+	if (json?.errors?.length > 0) {
+		throw new StraetoApiError(`GraphQL error: ${json.errors[0]?.message ?? 'unknown'}`);
+	}
+
 	const data = json?.data;
 	if (!data) throw new StraetoApiError('Response missing "data" field');
 
@@ -67,6 +71,7 @@ export async function fetchBusLocations(): Promise<[number, BusLocation[]]> {
 	if (!lastUpdateStr) throw new StraetoApiError('Response missing "lastUpdate" field');
 
 	const timestamp = new Date(lastUpdateStr).getTime();
+	if (isNaN(timestamp)) throw new StraetoApiError(`Invalid timestamp: "${lastUpdateStr}"`);
 	const results = busLocationByRoute.results;
 	if (!Array.isArray(results)) throw new StraetoApiError('Response missing "results" field');
 

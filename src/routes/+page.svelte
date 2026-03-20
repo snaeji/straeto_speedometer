@@ -86,8 +86,11 @@
 	});
 
 	function handleKeydown(e: KeyboardEvent) {
-		// Don't handle if user is typing in an input
+		// Don't handle if user is typing in an input or contenteditable
 		if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+		if ((e.target as HTMLElement)?.isContentEditable) return;
+		// Don't intercept modified keys (Ctrl+B = bookmark, Cmd+F = find, etc.)
+		if (e.ctrlKey || e.metaKey || e.altKey) return;
 
 		switch (e.key) {
 			case ' ':
@@ -112,15 +115,17 @@
 				busStore.selectBus(null);
 				break;
 			case 'f':
+				e.preventDefault();
 				busStore.autoFollow = !busStore.autoFollow;
 				break;
 			case 'b':
+				e.preventDefault();
 				appStore.toggleSidebar();
 				break;
-			case '1': appStore.setMode('live'); break;
-			case '2': appStore.setMode('playback'); break;
-			case '3': appStore.setMode('stats'); break;
-			case '4': appStore.setMode('heatmap'); break;
+			case '1': e.preventDefault(); appStore.setMode('live'); break;
+			case '2': e.preventDefault(); appStore.setMode('playback'); break;
+			case '3': e.preventDefault(); appStore.setMode('stats'); break;
+			case '4': e.preventDefault(); appStore.setMode('heatmap'); break;
 		}
 	}
 </script>

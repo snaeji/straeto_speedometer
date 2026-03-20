@@ -28,16 +28,27 @@
 
 	async function handleImport() {
 		const files = importInput?.files;
-		if (!files) return;
+		if (!files || files.length === 0) return;
 
 		let total = 0;
+		let errors = 0;
 		for (const file of files) {
-			const text = await file.text();
-			total += await collectionStore.importFile(text);
+			try {
+				const text = await file.text();
+				total += await collectionStore.importFile(text);
+			} catch (err) {
+				errors++;
+				console.error(`Import error for ${file.name}:`, err);
+			}
 		}
 
-		if (total > 0) {
+		if (importInput) importInput.value = ''; // Reset so same file can be re-imported
+		if (errors > 0) {
+			alert(`Import completed with errors: ${total.toLocaleString()} records imported, ${errors} file(s) failed`);
+		} else if (total > 0) {
 			alert(`Imported ${total.toLocaleString()} records`);
+		} else {
+			alert('No valid records found in the selected file(s)');
 		}
 	}
 
