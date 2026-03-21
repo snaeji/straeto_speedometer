@@ -101,7 +101,9 @@
 		chart.getZr().on('mousemove', (e: any) => {
 			const pointInPixel = [e.offsetX, e.offsetY];
 			if (chart!.containPixel('grid', pointInPixel)) {
-				const xVal = chart!.convertFromPixel({ xAxisIndex: 0 }, pointInPixel)[0];
+				const converted = chart!.convertFromPixel({ gridIndex: 0 }, pointInPixel);
+				const xVal = Array.isArray(converted) ? converted[0] : converted;
+				if (!Number.isFinite(xVal)) return;
 				// Quantize to 500ms to avoid excessive updates
 				const quantized = Math.round(xVal / 500) * 500;
 				if (quantized !== lastHoveredTs) {
@@ -147,7 +149,7 @@
 
 	/** Interpolate position between records at a given timestamp */
 	function interpolatePosition(records: BusLocation[], timestamp: number): { lat: number; lng: number; timestamp: number; speedKmh: number } | null {
-		if (records.length === 0) return null;
+		if (records.length === 0 || !Number.isFinite(timestamp)) return null;
 		if (records.length === 1) {
 			const r = records[0];
 			return { lat: r.lat, lng: r.lng, timestamp: r.timestamp, speedKmh: r.speedKmh ?? 0 };
@@ -171,6 +173,10 @@
 			else hi = mid;
 		}
 		// lo is the first record with timestamp >= target
+		if (lo <= 0) {
+			const r = records[0];
+			return { lat: r.lat, lng: r.lng, timestamp: r.timestamp, speedKmh: r.speedKmh ?? 0 };
+		}
 		const after = records[lo];
 		const before = records[lo - 1];
 		const gap = after.timestamp - before.timestamp;

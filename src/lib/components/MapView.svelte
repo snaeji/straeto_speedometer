@@ -329,6 +329,7 @@
 			ghostMarker.setLngLat([point.lng, point.lat]);
 		} else {
 			const el = document.createElement('div');
+			el.dataset.ghostDot = 'true';
 			el.style.cssText = `
 				width: 14px; height: 14px; border-radius: 50%;
 				background: rgba(6, 182, 212, 0.4);
