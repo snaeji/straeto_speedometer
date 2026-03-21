@@ -51,7 +51,7 @@ BusLocation (enriched)               — to busStore, IndexedDB, UI
 ### 2. API Ingestion
 
 - **Endpoint**: `https://api.straeto.is/graphql` (POST)
-- **Query**: Persisted query, SHA256 `8f9ee84171961f8a3b9a9d1a7b2a7ac49e7e122e1ba1727e75cfe3a94ff3edb8`
+- **Query**: Full GraphQL query with `apollo-require-preflight` header (includes nextStops + trip fields)
 - **Routes**: 29 active routes (1-29 excluding 30, 32-34; plus 31, 35, 36)
 - **Poll**: Every 2000ms; API `cache-control: max-age=2` makes faster polling pointless
 - **Empirical update gap**: Median 5.0s (49.8% of polls return stale data)

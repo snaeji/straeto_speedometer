@@ -75,7 +75,7 @@ Keyed by `routeNr` (e.g. `"1"`, `"14"`, `"A1"`). 71 routes total.
 
 ### `shapes.json` (~13 MB)
 
-GeoJSON `FeatureCollection` with 229 route polylines.
+GeoJSON `FeatureCollection` with 337 route polylines.
 
 ```json
 {
@@ -102,7 +102,7 @@ Each feature is a complete route polyline for one direction. Properties include 
 
 ### `stops.json` (~115 KB)
 
-Keyed by `stopId`. 1,292 stops.
+Keyed by `stopId`. 1,283 stops.
 
 ```json
 {
@@ -126,7 +126,7 @@ Keyed by `stopId`. 1,292 stops.
 
 ### `trip-shapes.json` (~95 KB)
 
-Simple map of `tripId → shapeId`. 6,452 entries.
+Simple map of `tripId → shapeId`. 11,243 entries.
 
 ```json
 {

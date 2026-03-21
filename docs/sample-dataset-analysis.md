@@ -99,7 +99,7 @@ The current download script (`tools/download_speed_limits.dart`) requires a Dart
 
 ## Data Collection
 - **Script**: `scripts/collect.mjs`
-- **Method**: Persisted GraphQL query to Straeto API
+- **Method**: Full GraphQL query to Straeto API (with `apollo-require-preflight` header)
 - **Poll interval**: 2 seconds (matches API cache `max-age=2`)
 - **CORS**: API returns `access-control-allow-origin: *` — no proxy needed
 - **Storage**: ~119 bytes/record, ~10 MB/24 hours estimated

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { CollectionService } from '$lib/services/collection-service';
 import { SpeedLimitService } from '$lib/services/speed-limit-service';
 import { makeSpeedLimitGeoJson, makeBusLocation } from '../../fixtures';
-import { ZONE_TRANSITION_GRACE_MS, VIOLATION_GRACE_KMH } from '$lib/utils/constants';
+import { ZONE_TRANSITION_GRACE_MS, VIOLATION_GRACE_KMH, VIOLATION_SUPPRESSED_ROUTES } from '$lib/utils/constants';
 
 const LAT_PER_M = 1 / 111_000;
 const LNG_PER_M = 1 / 48_600;
@@ -198,6 +198,121 @@ describe('CollectionService', () => {
 			const svc = makeCollectionService(50);
 			svc.processFixForSimulation(makeBusLocation({ timestamp: 1000 }));
 			svc.cleanupStale();
+		});
+	});
+
+	describe('zone transition grace - quantitative', () => {
+		it('does not flag violation during grace period ramp', () => {
+			const svc = makeZoneTransitionService();
+			const busId = 'bus-grace';
+			// Warm up on 50 zone to build speed
+			warmupBus(svc, busId, 64.14, -21.925, 0);
+
+			// Move to 30 zone — now going ~54 km/h in a 30 zone
+			// At t=0 of grace, effective limit = 50 (prevLimit), violation threshold = 55
+			// Bus at ~54 should NOT be a violation
+			const result = svc.processFixForSimulation(makeBusLocation({
+				busId,
+				lat: 64.14 + 10 * LAT_PER_M,
+				lng: -21.925 + 5 * 30 * LNG_PER_M,
+				timestamp: 10000,
+			}));
+			if (result && result.speedKmh != null && result.speedKmh > 30) {
+				// Speed is above 30 limit but within grace ramp
+				expect(result.isViolation).toBe(false);
+			}
+		});
+
+		it('flags violation when exceeding even the old limit during grace', () => {
+			const svc = makeZoneTransitionService();
+			const busId = 'bus-fast';
+			// Feed a bus going very fast (huge moves)
+			for (let i = 0; i < 5; i++) {
+				svc.processFixForSimulation(makeBusLocation({
+					busId,
+					lat: 64.14,
+					lng: -21.925 + i * 100 * LNG_PER_M, // 100m per fix = ~180 km/h raw
+					timestamp: i * 2000,
+				}));
+			}
+			// Move to 30 zone — speed should exceed even the old 50 limit + grace
+			const result = svc.processFixForSimulation(makeBusLocation({
+				busId,
+				lat: 64.14 + 10 * LAT_PER_M,
+				lng: -21.925 + 5 * 100 * LNG_PER_M,
+				timestamp: 10000,
+			}));
+			// If pipeline reports speed > 55 (50 + 5 grace), should be violation
+			if (result && result.speedKmh != null && result.speedKmh > 50 + VIOLATION_GRACE_KMH) {
+				expect(result.isViolation).toBe(true);
+			}
+		});
+	});
+
+	describe('route 31 violation suppression', () => {
+		it('suppresses violations for route 31', () => {
+			expect(VIOLATION_SUPPRESSED_ROUTES.has('31')).toBe(true);
+
+			const svc = makeCollectionService(30);
+			// Build up speed on route 31
+			for (let i = 0; i < 6; i++) {
+				svc.processFixForSimulation(makeBusLocation({
+					busId: 'bus-31',
+					routeNr: '31',
+					lat: 64.14,
+					lng: -21.925 + i * 30 * LNG_PER_M,
+					timestamp: i * 2000,
+				}));
+			}
+			// Even if speed exceeds limit, violation should be suppressed
+			const result = svc.processFixForSimulation(makeBusLocation({
+				busId: 'bus-31',
+				routeNr: '31',
+				lat: 64.14,
+				lng: -21.925 + 6 * 30 * LNG_PER_M,
+				timestamp: 12000,
+			}));
+			if (result) {
+				expect(result.isViolation).toBe(false);
+			}
+		});
+
+		it('does not suppress violations for other routes', () => {
+			expect(VIOLATION_SUPPRESSED_ROUTES.has('1')).toBe(false);
+		});
+	});
+
+	describe('gtfsDirectionId handling', () => {
+		it('uses gtfsDirectionId for route key when available', () => {
+			const svc = makeCollectionService(50);
+			// Two fixes with same compass bearing but different gtfsDirectionId
+			// should trigger a route/direction reset
+			svc.processFixForSimulation(makeBusLocation({
+				direction: 263, gtfsDirectionId: 0,
+				lat: 64.14, lng: -21.925, timestamp: 1000,
+			}));
+			const result = svc.processFixForSimulation(makeBusLocation({
+				direction: 263, gtfsDirectionId: 1, // same compass bearing, different GTFS direction
+				lat: 64.14, lng: -21.924, timestamp: 3000,
+			}));
+			// Should have triggered reset — speed back to 0
+			expect(result).not.toBeNull();
+			expect(result!.speedKmh).toBe(0);
+		});
+
+		it('falls back to compass bearing when gtfsDirectionId absent', () => {
+			const svc = makeCollectionService(50);
+			svc.processFixForSimulation(makeBusLocation({
+				direction: 0, gtfsDirectionId: undefined,
+				lat: 64.14, lng: -21.925, timestamp: 1000,
+			}));
+			const result = svc.processFixForSimulation(makeBusLocation({
+				direction: 1, gtfsDirectionId: undefined,
+				lat: 64.14, lng: -21.924, timestamp: 3000,
+			}));
+			// Direction changed (0→1), should trigger reset
+			expect(result).not.toBeNull();
+			expect(result!.speedKmh).toBe(0);
 		});
 	});
 

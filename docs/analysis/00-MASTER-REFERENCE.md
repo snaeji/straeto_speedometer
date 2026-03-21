@@ -94,7 +94,7 @@ These are collector-side outages, not API outages. The two major gaps remove ~5 
 
 | Metric | Value | Source | Confidence |
 |---|---|---|---|
-| API endpoint | `https://api.straeto.is/graphql` (persisted query) | CLAUDE.md | High |
+| API endpoint | `https://api.straeto.is/graphql` (full GraphQL query) | CLAUDE.md | High |
 | Cache-control header | `max-age=2` | CLAUDE.md, Doc 04 | High |
 | CORS | `access-control-allow-origin: *` | CLAUDE.md | High |
 | Response format | JSON, per-route bus positions | Doc 04 | High |
