@@ -9,6 +9,7 @@ jobs:
         with:
           node-version: '22'
       - run: npm ci
+      - run: npx svelte-kit sync
       - run: npm test
       - run: npm run test:coverage
 
@@ -20,6 +21,7 @@ jobs:
         with:
           node-version: '22'
       - run: npm ci
+      - run: npx svelte-kit sync
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
       - uses: actions/upload-artifact@v4
