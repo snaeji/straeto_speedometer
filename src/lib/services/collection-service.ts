@@ -71,6 +71,8 @@ export class CollectionService {
 					this.rawBuffer.clearBus(bus.busId);
 					this.displayAnimator.resetBus(bus.busId);
 					this.trajectoryCache.delete(bus.busId);
+					this.lastLimitByBus.delete(bus.busId);
+					this.limitTransitions.delete(bus.busId);
 				}
 				this.lastRouteByBus.set(bus.busId, routeKey);
 
@@ -106,6 +108,8 @@ export class CollectionService {
 			this.rawBuffer.clearBus(bus.busId);
 			this.displayAnimator.resetBus(bus.busId);
 			this.trajectoryCache.delete(bus.busId);
+			this.lastLimitByBus.delete(bus.busId);
+			this.limitTransitions.delete(bus.busId);
 		}
 		this.lastRouteByBus.set(bus.busId, routeKey);
 
@@ -213,7 +217,7 @@ export class CollectionService {
 				tripId: latest.tripId,
 				lat: position.lat,
 				lng: position.lng,
-				direction: bearing || latest.direction,
+				direction: bearing ?? latest.direction,
 				timestamp: displayCursorMs,
 				headsign: latest.headsign,
 				speedKmh: isStationary ? 0 : speed,
@@ -273,6 +277,15 @@ export class CollectionService {
 		this.displayAnimator.cleanupStale();
 		this.mapMatcher.cleanupStale();
 
+		// Prune per-bus caches for buses no longer tracked
+		for (const busId of this.trajectoryCache.keys()) {
+			if (!this.displayAnimator.has(busId)) {
+				this.trajectoryCache.delete(busId);
+				this.lastRouteByBus.delete(busId);
+				this.lastLimitByBus.delete(busId);
+			}
+		}
+
 		const now = Date.now();
 		for (const [busId, transition] of this.limitTransitions) {
 			if (now - transition.transitionTime > ZONE_TRANSITION_GRACE_MS * 2) {
@@ -302,7 +315,7 @@ export class CollectionService {
 				this.limitTransitions.set(busId, {
 					prevLimit: existing ? Math.max(existing.prevLimit, prevLimit) : prevLimit,
 					newLimit: currentLimit,
-					transitionTime: existing ? existing.transitionTime : timestamp,
+					transitionTime: timestamp,
 				});
 			} else if (currentLimit > prevLimit) {
 				this.limitTransitions.delete(busId);

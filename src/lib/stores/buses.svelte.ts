@@ -100,6 +100,9 @@ class BusStore {
 			for (const [busId, bus] of newMap) {
 				if (now - bus.timestamp > STALE_THRESHOLD_MS) {
 					newMap.delete(busId);
+					if (busId === this.selectedBusId) {
+						this.selectedBusId = null;
+					}
 					this.notifyStale(busId);
 				}
 			}

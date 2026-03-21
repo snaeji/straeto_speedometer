@@ -4,9 +4,7 @@
 
 	const modes: { id: AppMode; label: string; key: string }[] = [
 		{ id: 'live', label: 'Live', key: '1' },
-		{ id: 'playback', label: 'Playback', key: '2' },
-		{ id: 'stats', label: 'Stats', key: '3' },
-		{ id: 'heatmap', label: 'Heatmap', key: '4' },
+		{ id: 'heatmap', label: 'Heatmap', key: '2' },
 	];
 
 	let activeIndex = $derived(modes.findIndex((m) => m.id === appStore.mode));
@@ -35,16 +33,6 @@
 				<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
 					<circle cx="8" cy="8" r="3" />
 					<circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.5" opacity={isActive ? 0.5 : 0.3} />
-				</svg>
-			{:else if mode.id === 'playback'}
-				<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
-					<path d="M5 3v10l8-5z" />
-				</svg>
-			{:else if mode.id === 'stats'}
-				<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
-					<rect x="1" y="8" width="3" height="7" rx="0.5" />
-					<rect x="6.5" y="4" width="3" height="11" rx="0.5" />
-					<rect x="12" y="1" width="3" height="14" rx="0.5" />
 				</svg>
 			{:else if mode.id === 'heatmap'}
 				<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" opacity="0.9">

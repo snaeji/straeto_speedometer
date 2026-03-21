@@ -11,7 +11,7 @@ import type { CleanedTrajectory } from './trajectory-cleaner';
 export interface AnimatedPosition {
 	lat: number;
 	lng: number;
-	bearing: number;
+	bearing: number | null;
 	speedKmh: number;
 	isFrozen: boolean;
 }

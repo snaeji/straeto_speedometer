@@ -6,8 +6,6 @@
 	import { StorageService } from '$lib/services/storage-service';
 	import { appStore } from '$lib/stores/app.svelte';
 	import { collectionStore } from '$lib/stores/collection.svelte';
-	import { playbackStore } from '$lib/stores/playback.svelte';
-	import { statsStore } from '$lib/stores/stats.svelte';
 	import { busStore } from '$lib/stores/buses.svelte';
 	import { base } from '$app/paths';
 	import Dashboard from '$lib/components/Dashboard.svelte';
@@ -62,8 +60,6 @@
 			loadingMessage = 'Starting services';
 			loadingProgress = 80;
 			await collectionStore.init(speedLimitService, storageService, gtfsService, routeShapeIndex);
-			await playbackStore.init(storageService);
-			await statsStore.init(storageService);
 
 			// Periodic cleanup of stale animation state
 			cleanupTimer = setInterval(() => {
@@ -82,7 +78,6 @@
 	onDestroy(() => {
 		if (cleanupTimer) clearInterval(cleanupTimer);
 		collectionStore.destroy();
-		playbackStore.destroy();
 	});
 
 	function handleKeydown(e: KeyboardEvent) {
@@ -93,24 +88,6 @@
 		if (e.ctrlKey || e.metaKey || e.altKey) return;
 
 		switch (e.key) {
-			case ' ':
-				if (appStore.mode === 'playback') {
-					e.preventDefault();
-					playbackStore.isPlaying ? playbackStore.pause() : playbackStore.play();
-				}
-				break;
-			case 'ArrowLeft':
-				if (appStore.mode === 'playback') {
-					e.preventDefault();
-					playbackStore.stepBackward();
-				}
-				break;
-			case 'ArrowRight':
-				if (appStore.mode === 'playback') {
-					e.preventDefault();
-					playbackStore.stepForward();
-				}
-				break;
 			case 'Escape':
 				busStore.selectBus(null);
 				break;
@@ -123,9 +100,7 @@
 				appStore.toggleSidebar();
 				break;
 			case '1': e.preventDefault(); appStore.setMode('live'); break;
-			case '2': e.preventDefault(); appStore.setMode('playback'); break;
-			case '3': e.preventDefault(); appStore.setMode('stats'); break;
-			case '4': e.preventDefault(); appStore.setMode('heatmap'); break;
+			case '2': e.preventDefault(); appStore.setMode('heatmap'); break;
 		}
 	}
 </script>

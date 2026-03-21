@@ -5,9 +5,7 @@
 	import TopBar from './TopBar.svelte';
 	import MapView from './MapView.svelte';
 	import Sidebar from './Sidebar.svelte';
-	import PlaybackBar from './PlaybackBar.svelte';
 	import SpeedGraph from './SpeedGraph.svelte';
-	import ViolationFlash from './ViolationFlash.svelte';
 	import LoadingScreen from './LoadingScreen.svelte';
 
 	// Time-of-day ambient tint (Iceland = UTC+0, no DST)
@@ -34,7 +32,7 @@
 	});
 
 	// Sidebar right edge + gap, so expanded chart bar doesn't cover it
-	const sidebarWidth = $derived(appStore.mode === 'stats' ? 420 : 320);
+	const sidebarWidth = 320;
 	const chartBarLeft = $derived(
 		appStore.sidebarOpen ? sidebarWidth + 24 : 12
 	);
@@ -67,7 +65,7 @@
 	<!-- Sidebar (floating glass, sliding) -->
 	<div
 		class="absolute left-3 bottom-3 z-10 transition-all duration-300"
-		style="top: 68px; transform: translateX({appStore.sidebarOpen ? '0' : 'calc(-100% - 24px)'}); width: {appStore.mode === 'stats' ? '420px' : '320px'}"
+		style="top: 68px; transform: translateX({appStore.sidebarOpen ? '0' : 'calc(-100% - 24px)'}); width: 320px"
 		style:transition-timing-function="cubic-bezier(0.16, 1, 0.3, 1)"
 	>
 		<Sidebar />
@@ -80,28 +78,15 @@
 		</div>
 	{/if}
 
-	<!-- Playback Bar (floating glass, bottom) -->
-	{#if appStore.mode === 'playback'}
-		<div
-			class="absolute bottom-3 left-3 right-3 z-10"
-			style="animation: slide-in-up 0.3s cubic-bezier(0.16, 1, 0.3, 1)"
-		>
-			<PlaybackBar />
-		</div>
-	{/if}
-
 	<!-- Loading Screen (during 2-minute warmup) -->
 	{#if isWarmingUp}
 		<LoadingScreen />
 	{/if}
 
-	<!-- Violation screen flash -->
-	<ViolationFlash />
-
 	<!-- Keyboard shortcut hint -->
 	<div class="absolute right-4 z-[2] text-text-muted text-[10px] font-mono opacity-30 pointer-events-none select-none transition-all duration-300"
-		style:bottom={busStore.selectedBusId && panelExpanded ? '188px' : (appStore.mode === 'playback' ? '92px' : '16px')}
+		style:bottom={busStore.selectedBusId && panelExpanded ? '188px' : '16px'}
 	>
-		B sidebar &middot; 1-4 modes &middot; Esc deselect &middot; F follow
+		B sidebar &middot; 1-2 modes &middot; Esc deselect &middot; F follow
 	</div>
 </div>

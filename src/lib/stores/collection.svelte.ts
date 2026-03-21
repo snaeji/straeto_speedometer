@@ -48,10 +48,9 @@ class CollectionStore {
 	 * Called at 60fps — computes display time from wall clock for smooth interpolation
 	 * between the 2s process ticks.
 	 */
-	getAnimatedPosition(busId: string, _nowMs: number): { lat: number; lng: number; isFrozen: boolean } | null {
+	getAnimatedPosition(busId: string, nowMs: number): { lat: number; lng: number; isFrozen: boolean } | null {
 		if (!this.collectionService || !this.isWarmedUp) return null;
-		// Compute display time from current wall clock (smooth, not quantized to 2s ticks)
-		const displayTime = Date.now() - DISPLAY_DELAY_MS;
+		const displayTime = nowMs - DISPLAY_DELAY_MS;
 		return this.collectionService.getAnimatedPosition(busId, displayTime);
 	}
 
@@ -303,9 +302,18 @@ class CollectionStore {
 			this.violationsDetected += locations.filter((l) => l.isViolation).length;
 
 			if (withStorage && this.storageService) {
-				await this.storageService.storeBatch(locations);
+				try {
+					await this.storageService.storeBatch(locations);
+				} catch (err: unknown) {
+					if (err instanceof DOMException && err.name === 'QuotaExceededError') {
+						this.lastError = 'Storage full — export data and clear to continue recording.';
+						this.storageService = null;
+					} else {
+						console.error('Storage error:', err);
+					}
+				}
 
-				if (++this.refreshCounter >= 15) {
+				if (this.storageService && ++this.refreshCounter >= 15) {
 					this.refreshCounter = 0;
 					await this.refreshStorageInfo();
 				}

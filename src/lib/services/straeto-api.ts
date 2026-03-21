@@ -63,9 +63,9 @@ function validateApiResult(r: Record<string, unknown>): ApiResult | null {
 	if (typeof r.busId !== 'string' || !r.busId) return null;
 	if (typeof r.routeNr !== 'string' && typeof r.routeNr !== 'number') return null;
 	if (typeof r.tripId !== 'string') return null;
-	if (typeof r.lat !== 'number' || !isFinite(r.lat) || r.lat < -90 || r.lat > 90) return null;
-	if (typeof r.lng !== 'number' || !isFinite(r.lng) || r.lng < -180 || r.lng > 180) return null;
-	if (typeof r.direction !== 'number') return null;
+	if (typeof r.lat !== 'number' || !isFinite(r.lat) || r.lat < 63.5 || r.lat > 66.5) return null;
+	if (typeof r.lng !== 'number' || !isFinite(r.lng) || r.lng < -25.0 || r.lng > -13.0) return null;
+	if (typeof r.direction !== 'number' || !isFinite(r.direction)) return null;
 	return {
 		busId: String(r.busId),
 		routeNr: String(r.routeNr),

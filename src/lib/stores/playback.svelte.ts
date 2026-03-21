@@ -42,6 +42,11 @@ class PlaybackStore {
 
 	play() {
 		if (this.isPlaying || !this.hasData) return;
+
+		// Stop any live collection before starting playback
+		collectionStore.stopRecording();
+		collectionStore.stopMonitoring();
+
 		this.isPlaying = true;
 
 		// Reset pipeline state
@@ -105,14 +110,6 @@ class PlaybackStore {
 		);
 
 		if (version !== undefined && version !== this.seekVersion) return;
-
-		// Feed locations into the raw buffer for trajectory cleaning
-		const svc = collectionStore.collectionService;
-		if (svc) {
-			for (const loc of locations) {
-				svc.ingestReading(loc);
-			}
-		}
 
 		// Pick latest per bus for display
 		const latestByBus = new Map<string, typeof locations[number]>();

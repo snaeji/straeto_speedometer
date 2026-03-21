@@ -116,23 +116,26 @@ export class CleanedTrajectory {
 		if (pts[lo].isStationary && pts[hi].isStationary) {
 			return 0; // Both points stationary — bus is stopped
 		}
+		const denom = pts[hi].timestamp - pts[lo].timestamp;
+		if (denom <= 0) return this.smoothedSpeeds[lo];
+
 		if (pts[lo].isStationary) {
 			// Transitioning from stop to movement — only start accelerating near hi
-			const t = (timestamp - pts[lo].timestamp) / (pts[hi].timestamp - pts[lo].timestamp);
+			const t = (timestamp - pts[lo].timestamp) / denom;
 			if (t < 0.8) return 0; // Hold at 0 for most of the interval
 			const rampT = (t - 0.8) / 0.2; // Ramp up in last 20% of interval
 			return this.smoothedSpeeds[hi] * rampT;
 		}
 		if (pts[hi].isStationary) {
 			// Transitioning from movement to stop — decelerate early
-			const t = (timestamp - pts[lo].timestamp) / (pts[hi].timestamp - pts[lo].timestamp);
+			const t = (timestamp - pts[lo].timestamp) / denom;
 			if (t > 0.2) return 0; // Drop to 0 after first 20% of interval
 			const rampT = 1 - (t / 0.2); // Ramp down in first 20%
 			return this.smoothedSpeeds[lo] * rampT;
 		}
 
 		// Normal case: linear interpolation between two moving points
-		const t = (timestamp - pts[lo].timestamp) / (pts[hi].timestamp - pts[lo].timestamp);
+		const t = (timestamp - pts[lo].timestamp) / denom;
 		return this.smoothedSpeeds[lo] * (1 - t) + this.smoothedSpeeds[hi] * t;
 	}
 
@@ -156,7 +159,9 @@ export class CleanedTrajectory {
 			else hi = mid;
 		}
 
-		const t = (timestamp - pts[lo].timestamp) / (pts[hi].timestamp - pts[lo].timestamp);
+		const posDenom = pts[hi].timestamp - pts[lo].timestamp;
+		if (posDenom <= 0) return { lat: pts[lo].snappedLat, lng: pts[lo].snappedLng };
+		const t = (timestamp - pts[lo].timestamp) / posDenom;
 
 		// If route-matched, interpolate along the polyline for smooth road-following
 		if (this.shapeData) {
@@ -174,9 +179,9 @@ export class CleanedTrajectory {
 	}
 
 	/** Get interpolated bearing at a given timestamp. */
-	bearingAtTime(timestamp: number): number {
+	bearingAtTime(timestamp: number): number | null {
 		const pts = this.points;
-		if (pts.length < 2) return 0;
+		if (pts.length < 2) return null;
 
 		// Find the segment the bus is on
 		let idx = 0;
@@ -185,11 +190,11 @@ export class CleanedTrajectory {
 			else break;
 		}
 		const next = Math.min(idx + 1, pts.length - 1);
-		if (idx === next) return 0;
+		if (idx === next) return null;
 
 		const dLat = pts[next].snappedLat - pts[idx].snappedLat;
 		const dLng = pts[next].snappedLng - pts[idx].snappedLng;
-		if (Math.abs(dLat) < 1e-9 && Math.abs(dLng) < 1e-9) return 0;
+		if (Math.abs(dLat) < 1e-9 && Math.abs(dLng) < 1e-9) return null;
 
 		const bearing = (Math.atan2(dLng * Math.cos(pts[idx].snappedLat * Math.PI / 180), dLat) * 180 / Math.PI + 360) % 360;
 		return bearing;

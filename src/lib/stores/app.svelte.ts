@@ -17,10 +17,7 @@ class AppStore {
 
 	setMode(mode: AppMode) {
 		this.mode = mode;
-		// Show sidebar for all modes except playback
-		if (mode === 'playback') {
-			this.sidebarOpen = false;
-		} else if (!this.sidebarOpen) {
+		if (!this.sidebarOpen) {
 			this.sidebarOpen = true;
 		}
 	}

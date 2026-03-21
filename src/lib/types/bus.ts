@@ -161,6 +161,6 @@ export interface SpeedLimitSegment {
 	coordinateGroups: [number, number][][]; // Array of [lng, lat][] — one per linestring
 }
 
-export type AppMode = 'live' | 'playback' | 'stats' | 'heatmap';
+export type AppMode = 'live' | 'heatmap';
 
 export type PlaybackSpeed = 1 | 2 | 5 | 10;

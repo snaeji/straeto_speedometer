@@ -691,9 +691,9 @@ describe('TrajectoryCleaner', () => {
 	// 9. bearingAtTime()
 	// ----------------------------------------------------------------
 	describe('bearingAtTime()', () => {
-		it('returns 0 for empty or single-point trajectory', () => {
+		it('returns null for empty or single-point trajectory', () => {
 			const traj0 = new CleanedTrajectory('bus-1', '1', [], [], null);
-			expect(traj0.bearingAtTime(BASE_TIME)).toBe(0);
+			expect(traj0.bearingAtTime(BASE_TIME)).toBeNull();
 
 			const pt: CleanedPoint = {
 				lat: BASE_LAT,
@@ -709,7 +709,7 @@ describe('TrajectoryCleaner', () => {
 				rawSpeedKmh: 0,
 			};
 			const traj1 = new CleanedTrajectory('bus-1', '1', [pt], [0], null);
-			expect(traj1.bearingAtTime(BASE_TIME)).toBe(0);
+			expect(traj1.bearingAtTime(BASE_TIME)).toBeNull();
 		});
 
 		it('returns approximately 0 (north) for northbound trajectory', () => {
@@ -719,10 +719,11 @@ describe('TrajectoryCleaner', () => {
 			const midTime =
 				(result.points[1].timestamp + result.points[2].timestamp) / 2;
 			const bearing = result.bearingAtTime(midTime);
+			expect(bearing).not.toBeNull();
 
 			// Northbound bearing should be near 0 (or 360)
 			// Allow for small deviations due to coordinate math
-			const normalizedBearing = bearing > 180 ? bearing - 360 : bearing;
+			const normalizedBearing = bearing! > 180 ? bearing! - 360 : bearing!;
 			expect(Math.abs(normalizedBearing)).toBeLessThan(10);
 		});
 
@@ -733,10 +734,11 @@ describe('TrajectoryCleaner', () => {
 			const midTime =
 				(result.points[1].timestamp + result.points[2].timestamp) / 2;
 			const bearing = result.bearingAtTime(midTime);
+			expect(bearing).not.toBeNull();
 
 			// Eastbound bearing should be near 90
-			expect(bearing).toBeGreaterThan(60);
-			expect(bearing).toBeLessThan(120);
+			expect(bearing!).toBeGreaterThan(60);
+			expect(bearing!).toBeLessThan(120);
 		});
 
 		it('returns a value between 0 and 360', () => {
@@ -745,8 +747,10 @@ describe('TrajectoryCleaner', () => {
 
 			for (const pt of result.points) {
 				const b = result.bearingAtTime(pt.timestamp);
-				expect(b).toBeGreaterThanOrEqual(0);
-				expect(b).toBeLessThan(360);
+				if (b !== null) {
+					expect(b).toBeGreaterThanOrEqual(0);
+					expect(b).toBeLessThan(360);
+				}
 			}
 		});
 	});
