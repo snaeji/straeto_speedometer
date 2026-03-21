@@ -38,6 +38,7 @@ interface MatchState {
 	emaSpeedKmh: number;
 	confidence: MatchConfidence;
 	fixCount: number;
+	stopDwellSuppressed: boolean; // true if we already suppressed a spike for this stop dwell
 }
 
 export interface SnapResult {
@@ -196,11 +197,20 @@ export class MapMatcher {
 			isNearStop = this.checkNearStop(distAlongM, shapeData.stopDistancesM);
 		}
 
-		// Stop-aware speed filtering: if near stop and speed spikes, hold previous
+		// Stop-aware speed filtering: suppress a single GPS artifact spike at stop departure.
+		// Only triggers once per dwell — resets when bus moves away from the stop.
 		if (isNearStop && state && speedKmh != null) {
-			if (state.lastSpeedKmh < 5 && speedKmh > 15) {
-				speedKmh = state.lastSpeedKmh; // Hold previous speed during dwell artifact
+			if (state.lastSpeedKmh < 5 && speedKmh > 15 && !state.stopDwellSuppressed) {
+				speedKmh = state.lastSpeedKmh;
 			}
+		}
+
+		// Track stop dwell suppression: set flag when we suppress, clear when bus leaves stop
+		let stopDwellSuppressed = state?.stopDwellSuppressed ?? false;
+		if (isNearStop && state && state.lastSpeedKmh < 5 && (speedKmh ?? 0) > 15 && !stopDwellSuppressed) {
+			stopDwellSuppressed = true; // just suppressed — don't suppress again
+		} else if (!isNearStop || (speedKmh ?? 0) >= 5) {
+			stopDwellSuppressed = false; // bus left stop or is moving — reset
 		}
 
 		// Update state
@@ -213,6 +223,7 @@ export class MapMatcher {
 			emaSpeedKmh: speedKmh ?? 0,
 			confidence,
 			fixCount,
+			stopDwellSuppressed,
 		});
 
 		return {

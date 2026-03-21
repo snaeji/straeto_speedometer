@@ -199,7 +199,19 @@ export class CollectionService {
 						const limitResult = this.speedLimitService.getSpeedLimit(
 							snapResult.snappedLat, snapResult.snappedLng,
 						);
-						const speed = snapResult.speedKmh ?? rendererResult?.speedKmh ?? 0;
+						// Blend speed sources: when map matcher first emits speed after warmup,
+					// EMA-blend with spline renderer to avoid a jump (route dist > haversine on curves).
+					let speed: number;
+					if (snapResult.speedKmh != null) {
+						const fallback = rendererResult?.speedKmh ?? 0;
+						if (fallback > 0 && Math.abs(snapResult.speedKmh - fallback) > 5) {
+							speed = snapResult.speedKmh * 0.6 + fallback * 0.4;
+						} else {
+							speed = snapResult.speedKmh;
+						}
+					} else {
+						speed = rendererResult?.speedKmh ?? 0;
+					}
 						const isViolation = this.checkViolation(
 							bus.busId, speed, limitResult.speedLimitKmh, bus.timestamp,
 						);

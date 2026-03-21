@@ -88,7 +88,8 @@ class StatsStore {
 			if (prev && loc.speedKmh != null && loc.speedKmh > 0) {
 				const timeDeltaH = (loc.timestamp - prev.timestamp) / 3_600_000;
 				if (timeDeltaH > 0 && timeDeltaH < 0.5) {
-					totalDist += loc.speedKmh * timeDeltaH;
+					const avgSpeed = ((prev.speedKmh ?? 0) + loc.speedKmh) / 2;
+					totalDist += avgSpeed * timeDeltaH;
 				}
 			}
 			prevByBus.set(loc.busId, loc);
@@ -104,7 +105,10 @@ class StatsStore {
 			routeAgg.set(loc.routeNr, rStat);
 
 			if (loc.speedKmh != null) {
-				const idx = loc.speedKmh === 0 ? 0 : Math.min(9, Math.ceil(loc.speedKmh / 10));
+				const s = loc.speedKmh;
+				const idx = s === 0 ? 0
+					: s <= 10 ? 1 : s <= 20 ? 2 : s <= 30 ? 3 : s <= 40 ? 4
+					: s <= 50 ? 5 : s <= 60 ? 6 : s <= 70 ? 7 : s <= 80 ? 8 : 9;
 				speedBuckets[idx]++;
 			}
 		}
@@ -121,7 +125,7 @@ class StatsStore {
 		this.violationsByHour = hourlyViolations.map((count, hour) => ({ hour, count }));
 
 		const bucketLabels = ['0', '1-10', '11-20', '21-30', '31-40', '41-50', '51-60', '61-70', '71-80', '81+'];
-		this.speedDistribution = speedBuckets.map((count, i) => ({ range: bucketLabels[i], count }));
+		this.speedDistribution = bucketLabels.map((range, i) => ({ range, count: speedBuckets[i] }));
 
 		this.totalDistanceKm = Math.round(totalDist * 10) / 10;
 		this.totalBusesTracked = uniqueBuses.size;
@@ -160,12 +164,13 @@ class StatsStore {
 				totalRecs++;
 				uniqueBuses.add(loc.busId);
 
-				// Distance estimation
+				// Distance estimation (trapezoidal: average of prev and current speed)
 				const prev = prevByBus.get(loc.busId);
 				if (prev && loc.speedKmh != null && loc.speedKmh > 0) {
 					const timeDeltaH = (loc.timestamp - prev.timestamp) / 3_600_000;
 					if (timeDeltaH > 0 && timeDeltaH < 0.5) {
-						totalDist += loc.speedKmh * timeDeltaH;
+						const avgSpeed = ((prev.speedKmh ?? 0) + loc.speedKmh) / 2;
+						totalDist += avgSpeed * timeDeltaH;
 					}
 				}
 				prevByBus.set(loc.busId, loc);
