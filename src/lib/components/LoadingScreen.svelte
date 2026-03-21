@@ -22,15 +22,8 @@
 
 	let progressPercent = $derived(Math.round(collectionStore.warmupProgress * 100));
 
-	let busCount = $derived.by(() => {
-		const svc = collectionStore.collectionService;
-		return svc?.rawBuffer.busCount ?? 0;
-	});
-
-	let readingCount = $derived.by(() => {
-		const svc = collectionStore.collectionService;
-		return svc?.rawBuffer.totalReadings ?? 0;
-	});
+	let busCount = $derived(collectionStore.warmupBusCount);
+	let readingCount = $derived(collectionStore.warmupReadingCount);
 </script>
 
 <div class="loading-screen">

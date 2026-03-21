@@ -27,6 +27,8 @@ class CollectionStore {
 	// Warmup state
 	isWarmedUp = $state(false);
 	warmupProgress = $state(0);
+	warmupBusCount = $state(0);
+	warmupReadingCount = $state(0);
 
 	// Display cursor (2 minutes behind real-time)
 	private displayCursorMs = 0;
@@ -237,6 +239,9 @@ class CollectionStore {
 			} else {
 				this.lastError = null;
 			}
+			// Update reactive warmup stats from raw buffer
+			this.warmupBusCount = this.collectionService.rawBuffer.busCount;
+			this.warmupReadingCount = this.collectionService.rawBuffer.totalReadings;
 		} catch {
 			this.lastError = 'Failed to fetch bus data';
 		} finally {
