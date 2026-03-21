@@ -16,10 +16,12 @@ export const POLLING_INTERVAL_MS = 2000;
 export const OUTLIER_MAX_SPEED_KMH = 90.0;
 
 // Conservative speed factor.
-// Accounts for: server-side linear interpolation cutting corners on curves (~5%),
-// AND API timestamp uncertainty (±2-4s — poll time, not GPS fix time, adds ~3% avg error).
-// Does NOT account for: GPS hardware noise (negligible after server smoothing).
-export const CONSERVATIVE_SPEED_FACTOR = 0.92;
+// Accounts for: server-side linear interpolation cutting corners on curves (~5%).
+// API timestamp uncertainty (±2-4s) is random noise, not systematic bias — it
+// overestimates as often as it underestimates, so we don't compensate for it here.
+// Other pipeline stages (Gaussian smoothing, monotonic enforcement) already add
+// slight downward bias, so 0.95 avoids cumulative underestimation.
+export const CONSERVATIVE_SPEED_FACTOR = 0.95;
 
 
 // Spline renderer

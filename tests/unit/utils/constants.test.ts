@@ -19,8 +19,8 @@ describe('constants sanity checks', () => {
 		expect(OUTLIER_MAX_SPEED_KMH).toBe(90);
 	});
 
-	it('CONSERVATIVE_SPEED_FACTOR is 0.92 (accounts for server corner-cutting + API timing uncertainty)', () => {
-		expect(CONSERVATIVE_SPEED_FACTOR).toBe(0.92);
+	it('CONSERVATIVE_SPEED_FACTOR is 0.95 (accounts for server corner-cutting only)', () => {
+		expect(CONSERVATIVE_SPEED_FACTOR).toBe(0.95);
 	});
 
 	it('DEFAULT_SPEED_LIMIT_KMH is 50', () => {

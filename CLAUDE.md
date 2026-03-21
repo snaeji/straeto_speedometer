@@ -153,16 +153,17 @@ The Straeto API does **not** serve raw GPS fixes. The bus hardware transmits eve
 3. **Reject outliers (OR logic)**: Remove if speed to EITHER neighbor > 90 km/h
 4. **Enforce monotonic**: Remove backward points (bus only moves forward)
 5. **Detect stationarity**: 3+ readings with < 3m movement → speed = 0
-6. **Calculate raw speed**: `deltaDistance / deltaTime × 0.92` (conservative factor)
+6. **Calculate raw speed**: `deltaDistance / deltaTime × 0.95` (conservative factor)
 7. **Hard clamp**: Cap at 90 km/h (no bus exceeds this in display)
 8. **Gaussian smooth**: ±2 neighbors (sigma=1.0), respects stop boundaries
 9. **Interpolate**: `speedAtTime()` and `positionAtTime()` for any display timestamp
 
-### Conservative Speed Factor (0.92)
+### Conservative Speed Factor (0.95)
 
-Accounts for two known error sources:
+Accounts for one known systematic bias:
 - **Server corner-cutting** (~5%): Linear interpolation between 15s GPS fixes shortens curves
-- **API timing uncertainty** (~3%): Timestamps are poll time, not GPS fix time (±2-4s)
+
+API timing uncertainty (±2-4s) is random noise, not systematic — it overestimates as often as it underestimates, so we don't compensate for it. Other pipeline stages (Gaussian smoothing, monotonic enforcement) already add slight downward bias.
 
 ### Violation Detection
 - Violation: `speed > speedLimit + 5 km/h`
@@ -188,7 +189,7 @@ Accounts for two known error sources:
 |----------|-------|---------|
 | `POLLING_INTERVAL_MS` | 2000 | API poll frequency |
 | `OUTLIER_MAX_SPEED_KMH` | 90 | Hard speed ceiling + outlier filter |
-| `CONSERVATIVE_SPEED_FACTOR` | 0.92 | Accounts for corner-cutting + timing uncertainty |
+| `CONSERVATIVE_SPEED_FACTOR` | 0.95 | Accounts for server corner-cutting on curves |
 | `VIOLATION_GRACE_KMH` | 5.0 | Speed over limit tolerance |
 | `ZONE_TRANSITION_GRACE_MS` | 8000 | Deceleration grace period |
 | `DEFAULT_SPEED_LIMIT_KMH` | 50 | Fallback when no road match |
