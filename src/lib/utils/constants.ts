@@ -67,5 +67,9 @@ export const ROUTE_ANIM_GAP_RESET_S = 60;
 export const ROUTE_ANIM_STATIONARY_DIST_M = 5.0;
 export const ROUTE_ANIM_STATIONARY_COUNT = 3;
 
+// Routes with known GPS quality issues — suppress violation alerts
+// Route 31: systematic GPS errors (P95 speed 216 km/h, 68% stale rate)
+export const VIOLATION_SUPPRESSED_ROUTES = new Set(['31']);
+
 // Route colors for consistent coloring
 export const ROUTE_COLORS: Record<string, string> = {};

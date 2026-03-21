@@ -6,7 +6,7 @@ import { SpeedLimitService } from './speed-limit-service';
 import type { GtfsService } from './gtfs-service';
 import type { RouteShapeIndex } from './route-shape-index';
 import { copyBusLocationWith, type BusLocation } from '$lib/types/bus';
-import { VIOLATION_GRACE_KMH, ZONE_TRANSITION_GRACE_MS } from '$lib/utils/constants';
+import { VIOLATION_GRACE_KMH, ZONE_TRANSITION_GRACE_MS, VIOLATION_SUPPRESSED_ROUTES } from '$lib/utils/constants';
 
 interface ZoneTransition {
 	prevLimit: number;
@@ -122,8 +122,9 @@ export class CollectionService {
 	 * Exception: if the bus exceeds even the OLD (higher) limit + grace, it's
 	 * flagged immediately — it was already speeding before the zone change.
 	 */
-	private checkViolation(busId: string, speed: number, currentLimit: number, timestamp: number): boolean {
+	private checkViolation(busId: string, speed: number, currentLimit: number, timestamp: number, routeNr?: string): boolean {
 		if (speed <= 0) return false;
+		if (routeNr && VIOLATION_SUPPRESSED_ROUTES.has(routeNr)) return false;
 
 		const prevLimit = this.lastLimitByBus.get(busId);
 		this.lastLimitByBus.set(busId, currentLimit);
@@ -213,7 +214,7 @@ export class CollectionService {
 						speed = rendererResult?.speedKmh ?? 0;
 					}
 						const isViolation = this.checkViolation(
-							bus.busId, speed, limitResult.speedLimitKmh, bus.timestamp,
+							bus.busId, speed, limitResult.speedLimitKmh, bus.timestamp, bus.routeNr,
 						);
 
 						return copyBusLocationWith(bus, {
@@ -239,7 +240,7 @@ export class CollectionService {
 
 		const limitResult = this.speedLimitService.getSpeedLimit(bus.lat, bus.lng);
 		const isViolation = this.checkViolation(
-			bus.busId, withSpeed.speedKmh ?? 0, limitResult.speedLimitKmh, bus.timestamp,
+			bus.busId, withSpeed.speedKmh ?? 0, limitResult.speedLimitKmh, bus.timestamp, bus.routeNr,
 		);
 
 		return copyBusLocationWith(withSpeed, {
