@@ -273,43 +273,34 @@ export class TrajectoryCleaner {
 	 * Step 1: Deduplicate stale readings.
 	 *
 	 * With server-interpolated data, ~48% of API readings are cached repeats
-	 * of the same position. Group consecutive readings at same position into
-	 * clusters. Keep only the first and last of each cluster — no intermediates
-	 * needed because the server positions are already smoothed (the hardware
-	 * only transmits every 15s, and the server interpolates between fixes).
+	 * of the same position. We only keep readings where the position genuinely
+	 * changed from the last kept reading.
 	 *
-	 * Keeping first+last preserves stop boundary timing: we know exactly
-	 * when the bus arrived (first stale) and when it left (first genuine after cluster).
+	 * CRITICAL: We do NOT keep "last of stale cluster" endpoints. Doing so
+	 * creates artificial zero-speed segments that make moving buses appear to
+	 * stop-start (the stale readings don't mean the bus stopped — they mean
+	 * the API cached the same interpolated position).
+	 *
+	 * For genuine stops (bus at a bus stop), the stationarity detection in
+	 * Step 5 handles this using the time gap between the last genuine reading
+	 * before the stop and the first genuine reading after.
 	 */
 	private deduplicateStale(readings: RawReading[]): RawReading[] {
 		if (readings.length <= 1) return [...readings];
 
 		const result: RawReading[] = [readings[0]];
-		let clusterStart = 0;
 
 		for (let i = 1; i < readings.length; i++) {
-			const prev = readings[i - 1];
+			const lastKept = result[result.length - 1];
 			const curr = readings[i];
-			const dist = haversineDistanceM(prev.lat, prev.lng, curr.lat, curr.lng);
+			const dist = haversineDistanceM(lastKept.lat, lastKept.lng, curr.lat, curr.lng);
 
 			if (dist >= DEDUP_DISTANCE_M) {
-				// Position changed — end of cluster
-				// Keep last reading of the stale cluster for stop boundary timing
-				if (i - 1 > clusterStart && result[result.length - 1] !== readings[i - 1]) {
-					result.push(readings[i - 1]);
-				}
+				// Position genuinely changed — keep it
 				result.push(curr);
-				clusterStart = i;
 			}
-			// Stale readings within a cluster are dropped entirely.
-			// With server-interpolated data, intermediate stale points add no
-			// information — they're just cached repeats from the API.
-		}
-
-		// Keep the very last reading if it was in a stale cluster
-		const last = readings[readings.length - 1];
-		if (result[result.length - 1] !== last) {
-			result.push(last);
+			// Stale readings are dropped entirely.
+			// They're just cached API repeats, not evidence of the bus stopping.
 		}
 
 		return result;
@@ -522,16 +513,35 @@ export class TrajectoryCleaner {
 
 	/**
 	 * Step 5: Detect stationarity.
-	 * If distance hasn't changed by > STATIONARY_DIST_M for STATIONARY_COUNT+
-	 * consecutive readings, mark them as stationary with speed = 0.
+	 *
+	 * After dedup (which removes all stale readings), stationarity is detected
+	 * from the TIME GAP between consecutive genuine readings: if two readings
+	 * are close in distance but far apart in time, the bus was stopped in between.
+	 *
+	 * A short time gap (< 10s) with small distance is just normal API cadence.
+	 * A long time gap (>= 10s) with < STATIONARY_DIST_M movement means a genuine stop.
+	 *
+	 * Also detects consecutive near-stationary points (< 3m apart) as stopped.
 	 */
 	private detectStationarity(points: CleanedPoint[]): void {
-		if (points.length < STATIONARY_COUNT) return;
+		if (points.length < 2) return;
 
 		for (let i = 1; i < points.length; i++) {
 			const distMoved = points[i].distAlongRouteM - points[i - 1].distAlongRouteM;
+			const timeGapMs = points[i].timestamp - points[i - 1].timestamp;
+
+			// Long time gap with minimal movement = genuine stop (bus at a bus stop)
+			// The dedup removed all stale readings, so a 10+ second gap between
+			// genuine positions that are < 3m apart means the bus didn't move.
+			if (distMoved < STATIONARY_DIST_M && timeGapMs >= 10_000) {
+				points[i].rawSpeedKmh = 0;
+				points[i].isStationary = true;
+				points[i - 1].isStationary = true;
+				continue;
+			}
+
+			// Also check consecutive near-stationary points (cluster of small movements)
 			if (distMoved < STATIONARY_DIST_M) {
-				// Count consecutive near-stationary points
 				let count = 1;
 				let j = i;
 				while (
@@ -543,15 +553,13 @@ export class TrajectoryCleaner {
 				}
 
 				if (count >= STATIONARY_COUNT) {
-					// Mark all points in this stationary cluster
 					for (let k = i; k < j; k++) {
 						points[k].rawSpeedKmh = 0;
 						points[k].isGenuine = false;
 						points[k].isStationary = true;
 					}
-					// Also mark the anchor point before the cluster
 					points[i - 1].isStationary = true;
-					i = j - 1; // skip past the cluster
+					i = j - 1;
 				}
 			}
 		}
