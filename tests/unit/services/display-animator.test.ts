@@ -18,6 +18,7 @@ function makeCleanedPoint(overrides: Partial<CleanedPoint> = {}): CleanedPoint {
 		snappedLng: -21.93,
 		isGenuine: true,
 		isNearStop: false,
+		isStationary: false,
 		matchConfidence: 'high',
 		rawSpeedKmh: 0,
 		...overrides,

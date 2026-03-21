@@ -325,6 +325,90 @@ export class MapMatcher {
 		};
 	}
 
+	/**
+	 * Stateless snap with continuity hint: prefer segments near a given
+	 * distance-along-route. Used by TrajectoryCleaner to resolve roundabout
+	 * and overlap ambiguity by favoring segments close to the previous snap.
+	 *
+	 * Only considers segments within ±maxJumpM of hintDistAlongM.
+	 */
+	snapStatelessNear(
+		lat: number,
+		lng: number,
+		shapeData: RouteShapeData,
+		hintDistAlongM: number,
+		maxJumpM: number,
+	): SnapResult | null {
+		const vertices = shapeData.vertices;
+		if (vertices.length < 2) return null;
+
+		// Find candidate segments near the hint distance
+		const minDist = hintDistAlongM - maxJumpM;
+		const maxDist = hintDistAlongM + maxJumpM;
+
+		const candidateIndices: number[] = [];
+		for (let i = 0; i < vertices.length - 1; i++) {
+			const segStart = vertices[i].cumDistM;
+			const segEnd = vertices[i + 1].cumDistM;
+			if (segEnd >= minDist && segStart <= maxDist) {
+				candidateIndices.push(i);
+			}
+		}
+
+		if (candidateIndices.length === 0) return null;
+
+		// Project GPS onto each candidate, pick closest
+		let bestDist = Infinity;
+		let bestSegIdx = -1;
+		let bestT = 0;
+		let bestProjLat = lat;
+		let bestProjLng = lng;
+
+		for (const segIdx of candidateIndices) {
+			const a = vertices[segIdx];
+			const b = vertices[segIdx + 1];
+			const proj = projectPointOnSegment(lat, lng, a.lat, a.lng, b.lat, b.lng);
+			if (proj.distanceM < bestDist) {
+				bestDist = proj.distanceM;
+				bestSegIdx = segIdx;
+				bestT = proj.t;
+				bestProjLat = proj.projLat;
+				bestProjLng = proj.projLng;
+			}
+		}
+
+		if (bestSegIdx < 0) return null;
+
+		const segStart = vertices[bestSegIdx].cumDistM;
+		const segEnd = vertices[bestSegIdx + 1].cumDistM;
+		const distAlongM = segStart + bestT * (segEnd - segStart);
+
+		let confidence: MatchConfidence;
+		if (bestDist > MAX_SNAP_DISTANCE_M) {
+			confidence = 'off-route';
+		} else if (bestDist > LOW_CONFIDENCE_SNAP_DISTANCE_M) {
+			confidence = 'low';
+		} else {
+			confidence = 'high';
+		}
+
+		let isNearStop = false;
+		if (shapeData.stopDistancesM.length > 0) {
+			isNearStop = this.checkNearStop(distAlongM, shapeData.stopDistancesM);
+		}
+
+		return {
+			snappedLat: bestProjLat,
+			snappedLng: bestProjLng,
+			distAlongRouteM: distAlongM,
+			segmentIdx: bestSegIdx,
+			lateralOffsetM: bestDist,
+			confidence,
+			speedKmh: null,
+			isNearStop,
+		};
+	}
+
 	/** Check if a bus is currently matched to a route. */
 	isOnRoute(busId: string): boolean {
 		const state = this.states.get(busId);

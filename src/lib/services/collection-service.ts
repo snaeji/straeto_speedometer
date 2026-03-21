@@ -26,6 +26,7 @@ import {
 	RAW_BUFFER_RETENTION_MS,
 	CLEANING_LOOKBACK_MS,
 	CLEANING_LOOKAHEAD_MS,
+	OUTLIER_MAX_SPEED_KMH,
 } from '$lib/utils/constants';
 
 interface ZoneTransition {
@@ -158,7 +159,8 @@ export class CollectionService {
 			const position = trajectory.positionAtTime(displayCursorMs);
 			if (!position) continue;
 
-			const speed = trajectory.speedAtTime(displayCursorMs);
+			// Final safety clamp on speed (defense in depth)
+			const speed = Math.min(trajectory.speedAtTime(displayCursorMs), OUTLIER_MAX_SPEED_KMH);
 			const bearing = trajectory.bearingAtTime(displayCursorMs);
 
 			// Speed limit lookup on cleaned position

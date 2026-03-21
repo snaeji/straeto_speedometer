@@ -2,9 +2,10 @@
  * Trajectory Cleaner — post-processing pipeline for GPS readings.
  *
  * Takes a window of raw readings for one bus, removes stale duplicates,
- * snaps to GTFS route polyline, rejects outliers using full context
- * (before AND after each point), enforces monotonic forward movement,
- * detects stationarity, and calculates speed from cleaned distances.
+ * snaps to GTFS route polyline with sequential continuity, rejects outliers
+ * using full context (OR logic — either neighbor bad = reject), enforces
+ * monotonic forward movement, detects stationarity, and calculates speed
+ * from cleaned distances with hard clamping.
  *
  * Output: a CleanedTrajectory with guaranteed forward-only movement
  * and interpolation methods for position and speed at any timestamp.
@@ -26,7 +27,7 @@ import {
 /** Minimum distance (m) between readings to count as genuine movement. */
 const DEDUP_DISTANCE_M = 1.0;
 
-/** Maximum jump (m) between neighbors before a point is an outlier. */
+/** Maximum jump (m) to EITHER neighbor before a point is an outlier. */
 const OUTLIER_JUMP_M = 500;
 
 /** Minimum distance change over 3+ readings to count as stationary. */
@@ -37,6 +38,13 @@ const STATIONARY_COUNT = 3;
 
 /** Number of neighbors on each side for Gaussian speed smoothing. */
 const GAUSSIAN_HALF_WINDOW = 3;
+
+/**
+ * Maximum distance-along-route jump (m) between consecutive snaps
+ * before preferring a closer segment. Handles roundabouts where
+ * opposite-side segments are only ~50-100m apart in route distance.
+ */
+const SNAP_CONTINUITY_MAX_JUMP_M = 150;
 
 /** Precomputed Gaussian kernel weights for ±3 window (sigma = 1.5). */
 const GAUSSIAN_KERNEL = (() => {
@@ -58,6 +66,7 @@ export interface CleanedPoint {
 	snappedLng: number;
 	isGenuine: boolean; // True if GPS actually moved
 	isNearStop: boolean;
+	isStationary: boolean; // True if bus is confirmed stopped at this point
 	matchConfidence: MatchConfidence;
 	rawSpeedKmh: number; // Point-to-point speed before smoothing
 }
@@ -71,7 +80,11 @@ export class CleanedTrajectory {
 		private readonly shapeData: RouteShapeData | null,
 	) {}
 
-	/** Get interpolated speed at a given timestamp. */
+	/**
+	 * Get interpolated speed at a given timestamp.
+	 * Respects stationary boundaries — returns 0 during stopped periods
+	 * instead of linearly interpolating through them.
+	 */
 	speedAtTime(timestamp: number): number {
 		const pts = this.points;
 		if (pts.length === 0) return 0;
@@ -88,6 +101,26 @@ export class CleanedTrajectory {
 			else hi = mid;
 		}
 
+		// If either bracketing point is stationary, check if we're in the stationary zone
+		if (pts[lo].isStationary && pts[hi].isStationary) {
+			return 0; // Both points stationary — bus is stopped
+		}
+		if (pts[lo].isStationary) {
+			// Transitioning from stop to movement — only start accelerating near hi
+			const t = (timestamp - pts[lo].timestamp) / (pts[hi].timestamp - pts[lo].timestamp);
+			if (t < 0.8) return 0; // Hold at 0 for most of the interval
+			const rampT = (t - 0.8) / 0.2; // Ramp up in last 20% of interval
+			return this.smoothedSpeeds[hi] * rampT;
+		}
+		if (pts[hi].isStationary) {
+			// Transitioning from movement to stop — decelerate early
+			const t = (timestamp - pts[lo].timestamp) / (pts[hi].timestamp - pts[lo].timestamp);
+			if (t > 0.2) return 0; // Drop to 0 after first 20% of interval
+			const rampT = 1 - (t / 0.2); // Ramp down in first 20%
+			return this.smoothedSpeeds[lo] * rampT;
+		}
+
+		// Normal case: linear interpolation between two moving points
 		const t = (timestamp - pts[lo].timestamp) / (pts[hi].timestamp - pts[lo].timestamp);
 		return this.smoothedSpeeds[lo] * (1 - t) + this.smoothedSpeeds[hi] * t;
 	}
@@ -186,7 +219,7 @@ export class TrajectoryCleaner {
 		const busId = readings[0].busId;
 		const routeNr = readings[0].routeNr;
 
-		// Step 1: Deduplicate stale readings
+		// Step 1: Deduplicate stale readings (preserves stop boundary timing)
 		const deduped = this.deduplicateStale(readings);
 		if (deduped.length === 0) return null;
 
@@ -201,11 +234,11 @@ export class TrajectoryCleaner {
 			}
 		}
 
-		// Step 2: Snap to route (or use raw positions as fallback)
+		// Step 2: Snap to route with sequential continuity (or use raw positions)
 		const snapped = this.snapToRoute(deduped, mapMatcher, shapeData);
 		if (snapped.length === 0) return null;
 
-		// Step 3: Outlier rejection with full context
+		// Step 3: Outlier rejection with OR logic (either neighbor bad = reject)
 		const cleaned = this.rejectOutliers(snapped);
 		if (cleaned.length === 0) return null;
 
@@ -216,10 +249,10 @@ export class TrajectoryCleaner {
 		// Step 5: Detect stationarity
 		this.detectStationarity(monotonic);
 
-		// Step 6: Calculate raw point-to-point speeds
+		// Step 6: Calculate raw point-to-point speeds (with hard clamp)
 		this.calculateRawSpeeds(monotonic);
 
-		// Step 7: Gaussian-weighted speed smoothing
+		// Step 7: Gaussian-weighted speed smoothing (with final clamp)
 		const smoothedSpeeds = this.smoothSpeeds(monotonic);
 
 		return new CleanedTrajectory(busId, routeNr, monotonic, smoothedSpeeds, shapeData);
@@ -227,7 +260,8 @@ export class TrajectoryCleaner {
 
 	/**
 	 * Step 1: Deduplicate stale readings.
-	 * Group consecutive readings at same position. Keep first and last of each cluster.
+	 * Group consecutive readings at same position. Keep first and last of each cluster,
+	 * plus periodic intermediate points for temporal resolution during long stops.
 	 */
 	private deduplicateStale(readings: RawReading[]): RawReading[] {
 		if (readings.length <= 1) return [...readings];
@@ -242,12 +276,16 @@ export class TrajectoryCleaner {
 
 			if (dist >= DEDUP_DISTANCE_M) {
 				// Position changed — end of cluster
-				// If cluster had multiple readings, keep the last one too (timing info)
+				// Keep last reading of the stale cluster for stop boundary timing
 				if (i - 1 > clusterStart && result[result.length - 1] !== readings[i - 1]) {
 					result.push(readings[i - 1]);
 				}
 				result.push(curr);
 				clusterStart = i;
+			} else if (curr.timestamp - result[result.length - 1].timestamp >= 10_000) {
+				// During long stale clusters, keep a point every ~10s for temporal resolution.
+				// This prevents huge time gaps that cause interpolation artifacts.
+				result.push(curr);
 			}
 		}
 
@@ -261,7 +299,11 @@ export class TrajectoryCleaner {
 	}
 
 	/**
-	 * Step 2: Snap all points to route polyline (or use raw positions).
+	 * Step 2: Snap all points to route polyline with sequential continuity.
+	 *
+	 * For route-matched buses, uses sequential snapping: each snap prefers
+	 * segments near the previous snap's distance-along-route. This prevents
+	 * jumping across roundabouts or overlapping route sections.
 	 */
 	private snapToRoute(
 		readings: RawReading[],
@@ -271,25 +313,73 @@ export class TrajectoryCleaner {
 		const points: CleanedPoint[] = [];
 
 		if (shapeData) {
-			// Route-constrained: snap each reading to the GTFS polyline
+			let prevDistAlongM: number | null = null;
+
 			for (const reading of readings) {
 				const snap = mapMatcher.snapStateless(
 					reading.lat, reading.lng, shapeData, reading.nextStops,
 				);
-				if (snap && snap.confidence !== 'off-route') {
-					points.push({
-						lat: reading.lat,
-						lng: reading.lng,
-						timestamp: reading.timestamp,
-						distAlongRouteM: snap.distAlongRouteM,
-						snappedLat: snap.snappedLat,
-						snappedLng: snap.snappedLng,
-						isGenuine: !reading.isStale,
-						isNearStop: snap.isNearStop,
-						matchConfidence: snap.confidence,
-						rawSpeedKmh: 0,
-					});
+				if (!snap || snap.confidence === 'off-route') continue;
+
+				let distAlongM = snap.distAlongRouteM;
+
+				// Sequential continuity: if previous snap exists, check for
+				// suspicious distance jumps (roundabout/overlap snap ambiguity)
+				if (prevDistAlongM !== null) {
+					const jump = Math.abs(distAlongM - prevDistAlongM);
+					const dt = points.length > 0
+						? (reading.timestamp - points[points.length - 1].timestamp) / 1000
+						: 1;
+
+					// If the jump implies unreasonable speed AND we have a recent snap,
+					// try to find a better segment near the previous distance
+					if (jump > SNAP_CONTINUITY_MAX_JUMP_M && dt > 0) {
+						const impliedSpeed = (jump / 1000) / (dt / 3600);
+						if (impliedSpeed > OUTLIER_MAX_SPEED_KMH) {
+							// Try snapping with a hint to prefer segments near prevDistAlongM
+							const betterSnap = mapMatcher.snapStatelessNear(
+								reading.lat, reading.lng, shapeData,
+								prevDistAlongM, SNAP_CONTINUITY_MAX_JUMP_M,
+							);
+							if (betterSnap && betterSnap.confidence !== 'off-route') {
+								distAlongM = betterSnap.distAlongRouteM;
+								// Use the better snap's position
+								points.push({
+									lat: reading.lat,
+									lng: reading.lng,
+									timestamp: reading.timestamp,
+									distAlongRouteM: distAlongM,
+									snappedLat: betterSnap.snappedLat,
+									snappedLng: betterSnap.snappedLng,
+									isGenuine: !reading.isStale,
+									isNearStop: betterSnap.isNearStop,
+									isStationary: false,
+									matchConfidence: betterSnap.confidence,
+									rawSpeedKmh: 0,
+								});
+								prevDistAlongM = distAlongM;
+								continue;
+							}
+							// No better snap found — skip this point entirely
+							continue;
+						}
+					}
 				}
+
+				points.push({
+					lat: reading.lat,
+					lng: reading.lng,
+					timestamp: reading.timestamp,
+					distAlongRouteM: distAlongM,
+					snappedLat: snap.snappedLat,
+					snappedLng: snap.snappedLng,
+					isGenuine: !reading.isStale,
+					isNearStop: snap.isNearStop,
+					isStationary: false,
+					matchConfidence: snap.confidence,
+					rawSpeedKmh: 0,
+				});
+				prevDistAlongM = distAlongM;
 			}
 		} else {
 			// Fallback: use raw lat/lng with cumulative haversine distance
@@ -309,6 +399,7 @@ export class TrajectoryCleaner {
 					snappedLng: reading.lng,
 					isGenuine: !reading.isStale,
 					isNearStop: false,
+					isStationary: false,
 					matchConfidence: 'low',
 					rawSpeedKmh: 0,
 				});
@@ -321,11 +412,13 @@ export class TrajectoryCleaner {
 	}
 
 	/**
-	 * Step 3: Reject outliers using full context (neighbors on both sides).
-	 * A point is an outlier if:
-	 * - Jump to/from neighbors exceeds OUTLIER_JUMP_M
-	 * - Implied speed to/from neighbors exceeds OUTLIER_MAX_SPEED_KMH
-	 * - Off-route confidence while neighbors are high
+	 * Step 3: Reject outliers using full context.
+	 *
+	 * Uses OR logic: a point is rejected if the implied speed to EITHER
+	 * neighbor exceeds the outlier threshold. This catches single-sided
+	 * spikes (e.g., roundabout snap jumps, API glitches) that AND logic misses.
+	 *
+	 * Also checks for large distance jumps to either neighbor.
 	 */
 	private rejectOutliers(points: CleanedPoint[]): CleanedPoint[] {
 		if (points.length <= 2) return points;
@@ -337,16 +430,31 @@ export class TrajectoryCleaner {
 			const curr = points[i];
 			const next = points[i + 1];
 
-			// Check distance jumps
+			// Check distance jumps — OR logic: either side exceeding = reject
 			const distToPrev = Math.abs(curr.distAlongRouteM - prev.distAlongRouteM);
 			const distToNext = Math.abs(next.distAlongRouteM - curr.distAlongRouteM);
 
-			if (distToPrev > OUTLIER_JUMP_M && distToNext > OUTLIER_JUMP_M) {
-				keep[i] = false;
-				continue;
+			if (distToPrev > OUTLIER_JUMP_M || distToNext > OUTLIER_JUMP_M) {
+				// Large jump to at least one side.
+				// But only reject if the OTHER side also looks suspicious
+				// (small jump to one side is normal if bus actually traveled there)
+				const dtPrev = (curr.timestamp - prev.timestamp) / 1000;
+				const dtNext = (next.timestamp - curr.timestamp) / 1000;
+				const speedToPrev = dtPrev > 0 ? (distToPrev / 1000) / (dtPrev / 3600) : 0;
+				const speedToNext = dtNext > 0 ? (distToNext / 1000) / (dtNext / 3600) : 0;
+
+				// If the large jump also implies impossible speed, reject
+				if (distToPrev > OUTLIER_JUMP_M && speedToPrev > OUTLIER_MAX_SPEED_KMH) {
+					keep[i] = false;
+					continue;
+				}
+				if (distToNext > OUTLIER_JUMP_M && speedToNext > OUTLIER_MAX_SPEED_KMH) {
+					keep[i] = false;
+					continue;
+				}
 			}
 
-			// Check implied speed
+			// Check implied speed — OR logic: either side exceeding = reject
 			const dtPrev = (curr.timestamp - prev.timestamp) / 1000;
 			const dtNext = (next.timestamp - curr.timestamp) / 1000;
 
@@ -354,7 +462,8 @@ export class TrajectoryCleaner {
 				const speedToPrev = (distToPrev / 1000) / (dtPrev / 3600);
 				const speedToNext = (distToNext / 1000) / (dtNext / 3600);
 
-				if (speedToPrev > OUTLIER_MAX_SPEED_KMH && speedToNext > OUTLIER_MAX_SPEED_KMH) {
+				// Reject if speed to EITHER neighbor exceeds threshold
+				if (speedToPrev > OUTLIER_MAX_SPEED_KMH || speedToNext > OUTLIER_MAX_SPEED_KMH) {
 					keep[i] = false;
 					continue;
 				}
@@ -397,7 +506,7 @@ export class TrajectoryCleaner {
 	/**
 	 * Step 5: Detect stationarity.
 	 * If distance hasn't changed by > STATIONARY_DIST_M for STATIONARY_COUNT+
-	 * consecutive readings, mark them and set speed to 0.
+	 * consecutive readings, mark them as stationary with speed = 0.
 	 */
 	private detectStationarity(points: CleanedPoint[]): void {
 		if (points.length < STATIONARY_COUNT) return;
@@ -420,8 +529,11 @@ export class TrajectoryCleaner {
 					// Mark all points in this stationary cluster
 					for (let k = i; k < j; k++) {
 						points[k].rawSpeedKmh = 0;
-						points[k].isGenuine = false; // treat as non-moving
+						points[k].isGenuine = false;
+						points[k].isStationary = true;
 					}
+					// Also mark the anchor point before the cluster
+					points[i - 1].isStationary = true;
 					i = j - 1; // skip past the cluster
 				}
 			}
@@ -430,6 +542,7 @@ export class TrajectoryCleaner {
 
 	/**
 	 * Step 6: Calculate raw point-to-point speeds from cleaned distances.
+	 * Hard-clamps to OUTLIER_MAX_SPEED_KMH as a safety net.
 	 */
 	private calculateRawSpeeds(points: CleanedPoint[]): void {
 		if (points.length < 2) return;
@@ -438,13 +551,18 @@ export class TrajectoryCleaner {
 
 		for (let i = 1; i < points.length; i++) {
 			// Skip if stationarity already set speed to 0
-			if (points[i].rawSpeedKmh === 0 && !points[i].isGenuine) continue;
+			if (points[i].isStationary) {
+				points[i].rawSpeedKmh = 0;
+				continue;
+			}
 
 			const distM = points[i].distAlongRouteM - points[i - 1].distAlongRouteM;
 			const dtS = (points[i].timestamp - points[i - 1].timestamp) / 1000;
 
 			if (dtS > 0 && distM >= 0) {
-				points[i].rawSpeedKmh = (distM / 1000) / (dtS / 3600) * CONSERVATIVE_SPEED_FACTOR;
+				const raw = (distM / 1000) / (dtS / 3600) * CONSERVATIVE_SPEED_FACTOR;
+				// Hard clamp: no bus goes faster than OUTLIER_MAX_SPEED_KMH
+				points[i].rawSpeedKmh = Math.min(raw, OUTLIER_MAX_SPEED_KMH);
 			} else {
 				points[i].rawSpeedKmh = 0;
 			}
@@ -452,13 +570,20 @@ export class TrajectoryCleaner {
 	}
 
 	/**
-	 * Step 7: Gaussian-weighted speed smoothing.
+	 * Step 7: Gaussian-weighted speed smoothing with final clamp.
 	 * For each point, weight raw speeds of ±GAUSSIAN_HALF_WINDOW neighbors.
+	 * Respects stationary boundaries: stationary points always get speed 0.
 	 */
 	private smoothSpeeds(points: CleanedPoint[]): number[] {
 		const speeds = new Array<number>(points.length);
 
 		for (let i = 0; i < points.length; i++) {
+			// Stationary points always get 0, no smoothing across stop boundaries
+			if (points[i].isStationary) {
+				speeds[i] = 0;
+				continue;
+			}
+
 			let weightedSum = 0;
 			let totalWeight = 0;
 
@@ -466,13 +591,18 @@ export class TrajectoryCleaner {
 				const idx = i + j;
 				if (idx < 0 || idx >= points.length) continue;
 
+				// Don't smooth across stationary boundaries
+				if (points[idx].isStationary) continue;
+
 				const kernelIdx = j + GAUSSIAN_HALF_WINDOW;
 				const weight = GAUSSIAN_KERNEL[kernelIdx];
 				weightedSum += points[idx].rawSpeedKmh * weight;
 				totalWeight += weight;
 			}
 
-			speeds[i] = totalWeight > 0 ? Math.max(0, weightedSum / totalWeight) : 0;
+			const smoothed = totalWeight > 0 ? Math.max(0, weightedSum / totalWeight) : 0;
+			// Final safety clamp
+			speeds[i] = Math.min(smoothed, OUTLIER_MAX_SPEED_KMH);
 		}
 
 		return speeds;

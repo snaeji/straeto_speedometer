@@ -546,6 +546,7 @@ describe('TrajectoryCleaner', () => {
 				snappedLng: BASE_LNG,
 				isGenuine: true,
 				isNearStop: false,
+				isStationary: false,
 				matchConfidence: 'low',
 				rawSpeedKmh: 0,
 			};
@@ -614,6 +615,7 @@ describe('TrajectoryCleaner', () => {
 				snappedLng: BASE_LNG,
 				isGenuine: true,
 				isNearStop: false,
+				isStationary: false,
 				matchConfidence: 'low',
 				rawSpeedKmh: 0,
 			};
@@ -700,6 +702,7 @@ describe('TrajectoryCleaner', () => {
 				snappedLng: BASE_LNG,
 				isGenuine: true,
 				isNearStop: false,
+				isStationary: false,
 				matchConfidence: 'low',
 				rawSpeedKmh: 0,
 			};
@@ -1015,6 +1018,7 @@ describe('TrajectoryCleaner', () => {
 				snappedLng: BASE_LNG,
 				isGenuine: false,
 				isNearStop: false,
+				isStationary: false,
 				matchConfidence: 'low',
 				rawSpeedKmh: 0,
 			};
@@ -1027,6 +1031,7 @@ describe('TrajectoryCleaner', () => {
 				snappedLng: BASE_LNG,
 				isGenuine: false,
 				isNearStop: false,
+				isStationary: false,
 				matchConfidence: 'low',
 				rawSpeedKmh: 0,
 			};
@@ -1052,6 +1057,7 @@ describe('TrajectoryCleaner', () => {
 				snappedLng: BASE_LNG,
 				isGenuine: true,
 				isNearStop: false,
+				isStationary: false,
 				matchConfidence: 'low',
 				rawSpeedKmh: 0,
 			};
@@ -1064,6 +1070,7 @@ describe('TrajectoryCleaner', () => {
 				snappedLng: BASE_LNG,
 				isGenuine: true,
 				isNearStop: false,
+				isStationary: false,
 				matchConfidence: 'low',
 				rawSpeedKmh: 34,
 			};
