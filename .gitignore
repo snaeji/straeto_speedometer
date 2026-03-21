@@ -19,3 +19,9 @@ build/
 .svelte-kit/
 scripts/.browser-ws
 scripts/.chrome-profile
+
+# Test artifacts
+tests/e2e/screenshots/
+test-results/
+playwright-report/
+coverage/
