@@ -1,4 +1,8 @@
-import { POLLING_INTERVAL_MS } from '$lib/utils/constants';
+import {
+	POLLING_INTERVAL_MS,
+	DISPLAY_DELAY_MS,
+	WARMUP_DURATION_MS,
+} from '$lib/utils/constants';
 import { CollectionService } from '$lib/services/collection-service';
 import { SpeedLimitService } from '$lib/services/speed-limit-service';
 import { StorageService } from '$lib/services/storage-service';
@@ -9,6 +13,7 @@ import type { BusLocation } from '$lib/types/bus';
 import { busStore } from './buses.svelte';
 
 class CollectionStore {
+	// Public state
 	isRecording = $state(false);
 	isMonitoring = $state(false);
 	isSimulating = $state(false);
@@ -19,35 +24,33 @@ class CollectionStore {
 	recordCount = $state(0);
 	lastError = $state<string | null>(null);
 
-	private timer: ReturnType<typeof setInterval> | null = null;
-	private monitorTimer: ReturnType<typeof setInterval> | null = null;
+	// Warmup state
+	isWarmedUp = $state(false);
+	warmupProgress = $state(0);
+
+	// Display cursor (2 minutes behind real-time)
+	private displayCursorMs = 0;
+
+	// Timers
+	private ingestTimer: ReturnType<typeof setInterval> | null = null;
+	private processTimer: ReturnType<typeof setInterval> | null = null;
+	private warmupTimer: ReturnType<typeof setInterval> | null = null;
 	private simulateTimer: ReturnType<typeof setInterval> | null = null;
-	private isCollecting = false;
+	private isIngesting = false;
 	private refreshCounter = 0;
+
 	collectionService: CollectionService | null = null;
 	storageService: StorageService | null = null;
 
-	/** Expose spline renderer for MapView animation (legacy, used for trail sampling) */
-	get renderer() {
-		return this.collectionService?.renderer ?? null;
-	}
-
-	/** Set time source for renderer (e.g. for playback mode) */
-	setTimeSource(getTime: () => number) {
-		if (this.collectionService?.renderer) {
-			this.collectionService.renderer.setTimeSource(getTime);
-		}
-		if (this.collectionService?.mapMatcher) {
-			this.collectionService.mapMatcher.setTimeSource(getTime);
-		}
-		if (this.collectionService?.routeAnimator) {
-			this.collectionService.routeAnimator.setTimeSource(getTime);
-		}
-	}
-
-	/** Unified animated position: route-constrained when possible, spline fallback. */
-	getAnimatedPosition(busId: string, nowMs: number): { lat: number; lng: number; isFrozen: boolean } | null {
-		return this.collectionService?.getAnimatedPosition(busId, nowMs) ?? null;
+	/** Unified animated position for MapView 60fps loop.
+	 * Called at 60fps — computes display time from wall clock for smooth interpolation
+	 * between the 2s process ticks.
+	 */
+	getAnimatedPosition(busId: string, _nowMs: number): { lat: number; lng: number; isFrozen: boolean } | null {
+		if (!this.collectionService || !this.isWarmedUp) return null;
+		// Compute display time from current wall clock (smooth, not quantized to 2s ticks)
+		const displayTime = Date.now() - DISPLAY_DELAY_MS;
+		return this.collectionService.getAnimatedPosition(busId, displayTime);
 	}
 
 	get elapsedSeconds(): number {
@@ -76,89 +79,110 @@ class CollectionStore {
 		await this.refreshStorageInfo();
 	}
 
+	// --- Recording (ingest + process + store) ---
+
 	async startRecording() {
 		if (this.isRecording || !this.collectionService || !this.storageService) return;
 
+		this.stopMonitoring();
 		this.isRecording = true;
 		this.startedAt = Date.now();
 		this.lastError = null;
+		this.isWarmedUp = false;
+		this.warmupProgress = 0;
 
-		// Stop monitoring if running
-		this.stopMonitoring();
+		// Start ingesting immediately
+		this.startIngesting();
 
-		// Collect immediately, then on interval
-		await this.recordAndStore();
-		this.timer = setInterval(() => this.recordAndStore(), POLLING_INTERVAL_MS);
+		// Start warmup countdown
+		this.startWarmup(() => {
+			// After warmup: start processing frames
+			this.startProcessing(true);
+		});
 	}
 
 	stopRecording() {
-		if (this.timer) {
-			clearInterval(this.timer);
-			this.timer = null;
-		}
+		this.stopIngesting();
+		this.stopProcessing();
+		this.stopWarmup();
 		this.isRecording = false;
+		this.isWarmedUp = false;
+		this.warmupProgress = 0;
 	}
+
+	// --- Monitoring (ingest + process, no storage) ---
 
 	async startMonitoring() {
 		if (this.isMonitoring || this.isRecording || !this.collectionService) return;
+
 		this.isMonitoring = true;
 		this.lastError = null;
+		this.isWarmedUp = false;
+		this.warmupProgress = 0;
 
-		await this.monitorOnce();
-		this.monitorTimer = setInterval(() => this.monitorOnce(), POLLING_INTERVAL_MS);
+		this.startIngesting();
+		this.startWarmup(() => {
+			this.startProcessing(false);
+		});
 	}
 
 	stopMonitoring() {
-		if (this.monitorTimer) {
-			clearInterval(this.monitorTimer);
-			this.monitorTimer = null;
-		}
+		this.stopIngesting();
+		this.stopProcessing();
+		this.stopWarmup();
 		this.isMonitoring = false;
+		this.isWarmedUp = false;
+		this.warmupProgress = 0;
 	}
 
-	private async monitorOnce() {
-		if (!this.collectionService) return;
-		if (this.isCollecting) return;
-		this.isCollecting = true;
-		try {
-			const locations = await this.collectionService.collectOnce();
-			if (locations && locations.length > 0) {
-				busStore.updateBuses(locations, true);
+	// --- Simulation ---
+
+	async startSimulation() {
+		if (this.isSimulating) return;
+		this.stopRecording();
+		this.stopMonitoring();
+
+		this.isSimulating = true;
+		this.startedAt = Date.now();
+		this.lastError = null;
+		this.isWarmedUp = false;
+		this.warmupProgress = 0;
+		resetMockData();
+
+		await ensureSampleLoaded();
+
+		// For simulation, ingest mock data into the raw buffer
+		const ingestMock = () => {
+			const locations = generateMockData();
+			if (locations.length === 0) return;
+			for (const bus of locations) {
+				this.collectionService?.ingestReading(bus);
 			}
-		} finally {
-			this.isCollecting = false;
+		};
+
+		// Start ingesting mock data
+		ingestMock();
+		this.simulateTimer = setInterval(ingestMock, POLLING_INTERVAL_MS);
+
+		// Start warmup
+		this.startWarmup(() => {
+			this.startProcessing(false);
+		});
+	}
+
+	stopSimulation() {
+		if (this.simulateTimer) {
+			clearInterval(this.simulateTimer);
+			this.simulateTimer = null;
 		}
+		this.stopProcessing();
+		this.stopWarmup();
+		this.isSimulating = false;
+		this.isWarmedUp = false;
+		this.warmupProgress = 0;
 	}
 
-	private async recordAndStore() {
-		if (!this.collectionService || !this.storageService) return;
-		if (this.isCollecting) return;
-		this.isCollecting = true;
-
-		try {
-			const locations = await this.collectionService.collectOnce();
-			if (!locations) {
-				this.lastError = 'Failed to fetch bus data';
-				return;
-			}
-
-			this.lastError = null;
-
-			if (locations.length > 0) {
-				busStore.updateBuses(locations, true);
-				await this.storageService.storeBatch(locations);
-				this.recordsRecorded += locations.length;
-				this.violationsDetected += locations.filter((l) => l.isViolation).length;
-			}
-
-			if (++this.refreshCounter >= 15) {
-				this.refreshCounter = 0;
-				await this.refreshStorageInfo();
-			}
-		} finally {
-			this.isCollecting = false;
-		}
-	}
+	// --- Data management ---
 
 	async refreshStorageInfo() {
 		if (!this.storageService) return;
@@ -181,56 +205,107 @@ class CollectionStore {
 		await this.refreshStorageInfo();
 	}
 
-	async startSimulation() {
-		if (this.isSimulating) return;
-		this.stopRecording();
-		this.stopMonitoring();
-
-		this.isSimulating = true;
-		this.startedAt = Date.now();
-		this.lastError = null;
-		resetMockData();
-
-		// Load sample data before starting playback
-		await ensureSampleLoaded();
-
-		// Replay sample data snapshots through the speed pipeline
-		const tick = () => {
-			let locations = generateMockData();
-			if (locations.length === 0) return;
-
-			// Process through speed calculator + speed limit service if available
-			if (this.collectionService) {
-				const processed: BusLocation[] = [];
-				for (const bus of locations) {
-					const withSpeed = this.collectionService.processFixForSimulation(bus);
-					if (withSpeed) {
-						processed.push(withSpeed);
-					}
-				}
-				locations = processed;
-			}
-
-			busStore.updateBuses(locations, true);
-			this.recordsRecorded += locations.length;
-			this.violationsDetected += locations.filter((l) => l.isViolation).length;
-		};
-		tick();
-		this.simulateTimer = setInterval(tick, POLLING_INTERVAL_MS);
-	}
-
-	stopSimulation() {
-		if (this.simulateTimer) {
-			clearInterval(this.simulateTimer);
-			this.simulateTimer = null;
-		}
-		this.isSimulating = false;
-	}
-
 	destroy() {
 		this.stopRecording();
 		this.stopMonitoring();
 		this.stopSimulation();
+	}
+
+	// --- Private: Ingestion ---
+
+	private startIngesting() {
+		this.ingestOnce();
+		this.ingestTimer = setInterval(() => this.ingestOnce(), POLLING_INTERVAL_MS);
+	}
+
+	private stopIngesting() {
+		if (this.ingestTimer) {
+			clearInterval(this.ingestTimer);
+			this.ingestTimer = null;
+		}
+	}
+
+	private async ingestOnce() {
+		if (!this.collectionService) return;
+		if (this.isIngesting) return;
+		this.isIngesting = true;
+
+		try {
+			const count = await this.collectionService.ingestPoll();
+			if (count === 0) {
+				this.lastError = 'Failed to fetch bus data';
+			} else {
+				this.lastError = null;
+			}
+		} catch {
+			this.lastError = 'Failed to fetch bus data';
+		} finally {
+			this.isIngesting = false;
+		}
+	}
+
+	// --- Private: Warmup ---
+
+	private startWarmup(onComplete: () => void) {
+		const warmupStart = Date.now();
+
+		this.warmupTimer = setInterval(() => {
+			const elapsed = Date.now() - warmupStart;
+			this.warmupProgress = Math.min(1, elapsed / WARMUP_DURATION_MS);
+
+			if (elapsed >= WARMUP_DURATION_MS) {
+				this.stopWarmup();
+				this.isWarmedUp = true;
+				onComplete();
+			}
+		}, 100); // Update progress at 10fps
+	}
+
+	private stopWarmup() {
+		if (this.warmupTimer) {
+			clearInterval(this.warmupTimer);
+			this.warmupTimer = null;
+		}
+	}
+
+	// --- Private: Processing ---
+
+	private startProcessing(withStorage: boolean) {
+		// Process first frame immediately
+		this.processOnce(withStorage);
+		this.processTimer = setInterval(() => this.processOnce(withStorage), POLLING_INTERVAL_MS);
+	}
+
+	private stopProcessing() {
+		if (this.processTimer) {
+			clearInterval(this.processTimer);
+			this.processTimer = null;
+		}
+	}
+
+	private async processOnce(withStorage: boolean) {
+		if (!this.collectionService) return;
+
+		// Advance display cursor
+		this.displayCursorMs = Date.now() - DISPLAY_DELAY_MS;
+
+		// Process frame at display cursor time
+		const locations = this.collectionService.processFrame(this.displayCursorMs);
+
+		if (locations.length > 0) {
+			busStore.updateBuses(locations, true);
+			this.recordsRecorded += locations.length;
+			this.violationsDetected += locations.filter((l) => l.isViolation).length;
+
+			if (withStorage && this.storageService) {
+				await this.storageService.storeBatch(locations);
+
+				if (++this.refreshCounter >= 15) {
+					this.refreshCounter = 0;
+					await this.refreshStorageInfo();
+				}
+			}
+		}
 	}
 }
 

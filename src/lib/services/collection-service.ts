@@ -1,27 +1,51 @@
+/**
+ * Collection Service — orchestrates the 2-minute buffer pipeline.
+ *
+ * Two decoupled operations:
+ * - ingestPoll(): fetches API, stores raw readings in RawBuffer
+ * - processFrame(): takes a display cursor time, cleans trajectories,
+ *   calculates speed, detects violations, emits BusLocations
+ *
+ * The display cursor runs 2 minutes behind real-time, giving the
+ * trajectory cleaner full context (before AND after each point).
+ */
+
 import { fetchBusLocations } from './straeto-api';
-import { SplineRenderer } from './spline-renderer';
+import { RawBuffer, type RawReading } from './raw-buffer';
+import { TrajectoryCleaner, type CleanedTrajectory } from './trajectory-cleaner';
+import { DisplayAnimator } from './display-animator';
 import { MapMatcher } from './map-matcher';
-import { RouteAnimator } from './route-animator';
 import { SpeedLimitService } from './speed-limit-service';
 import type { GtfsService } from './gtfs-service';
 import type { RouteShapeIndex } from './route-shape-index';
-import { copyBusLocationWith, type BusLocation } from '$lib/types/bus';
-import { VIOLATION_GRACE_KMH, ZONE_TRANSITION_GRACE_MS, VIOLATION_SUPPRESSED_ROUTES } from '$lib/utils/constants';
+import { copyBusLocationWith, busLocationFromApi, type BusLocation } from '$lib/types/bus';
+import {
+	VIOLATION_GRACE_KMH,
+	ZONE_TRANSITION_GRACE_MS,
+	VIOLATION_SUPPRESSED_ROUTES,
+	RAW_BUFFER_RETENTION_MS,
+	CLEANING_LOOKBACK_MS,
+	CLEANING_LOOKAHEAD_MS,
+} from '$lib/utils/constants';
 
 interface ZoneTransition {
 	prevLimit: number;
 	newLimit: number;
-	transitionTime: number; // GPS timestamp when the limit first decreased
+	transitionTime: number;
 }
 
 export class CollectionService {
-	readonly renderer = new SplineRenderer();
+	readonly rawBuffer = new RawBuffer();
+	readonly trajectoryCleaner = new TrajectoryCleaner();
+	readonly displayAnimator = new DisplayAnimator();
 	readonly mapMatcher = new MapMatcher();
-	readonly routeAnimator = new RouteAnimator();
-	private lastUpdateByBus = new Map<string, number>();
-	private lastRouteByBus = new Map<string, string>(); // busId -> "routeNr:direction"
-	private lastLimitByBus = new Map<string, number>(); // busId -> last speed limit
-	private limitTransitions = new Map<string, ZoneTransition>(); // active zone transitions
+
+	private lastLimitByBus = new Map<string, number>();
+	private limitTransitions = new Map<string, ZoneTransition>();
+	private lastRouteByBus = new Map<string, string>();
+
+	// Cache cleaned trajectories for the display animator
+	private trajectoryCache = new Map<string, CleanedTrajectory>();
 
 	constructor(
 		private speedLimitService: SpeedLimitService,
@@ -30,56 +54,202 @@ export class CollectionService {
 	) {}
 
 	/**
-	 * Poll once. Returns processed bus locations (deduplicated, speed-calculated,
-	 * speed-limit-matched, violations detected), or null on error.
+	 * Ingest a single API poll. Fetches bus locations and stores raw readings.
+	 * Called every 2s by the polling timer. No processing happens here.
 	 */
-	async collectOnce(): Promise<BusLocation[] | null> {
+	async ingestPoll(): Promise<number> {
 		try {
 			const [, rawBuses] = await fetchBusLocations();
-			const processed: BusLocation[] = [];
 
 			for (const bus of rawBuses) {
-				// Deduplicate: skip if lastUpdate hasn't changed
-				const prevTimestamp = this.lastUpdateByBus.get(bus.busId);
-				if (prevTimestamp != null && bus.timestamp === prevTimestamp) {
-					continue;
+				// Detect route/direction changes
+				const dirForKey = bus.gtfsDirectionId ?? bus.direction;
+				const routeKey = `${bus.routeNr}:${dirForKey}`;
+				const prevRouteKey = this.lastRouteByBus.get(bus.busId);
+				if (prevRouteKey && prevRouteKey !== routeKey) {
+					this.rawBuffer.clearBus(bus.busId);
+					this.displayAnimator.resetBus(bus.busId);
+					this.trajectoryCache.delete(bus.busId);
 				}
-				this.lastUpdateByBus.set(bus.busId, bus.timestamp);
+				this.lastRouteByBus.set(bus.busId, routeKey);
 
-				const result = this.processBusFix(bus);
-				if (result) processed.push(result);
+				this.rawBuffer.ingest({
+					busId: bus.busId,
+					routeNr: bus.routeNr,
+					tripId: bus.tripId,
+					lat: bus.lat,
+					lng: bus.lng,
+					direction: bus.direction,
+					timestamp: bus.timestamp,
+					headsign: bus.headsign ?? undefined,
+					nextStops: bus.nextStops,
+					gtfsDirectionId: bus.gtfsDirectionId,
+				});
 			}
 
-			return processed;
+			return rawBuses.length;
 		} catch (err) {
-			console.error('Collection error:', err);
-			return null;
+			console.error('Ingest error:', err);
+			return 0;
 		}
-	}
-
-	/** Process a single bus location through speed calc + speed limit (for simulation replay). */
-	processFixForSimulation(bus: BusLocation): BusLocation | null {
-		return this.processBusFix(bus);
 	}
 
 	/**
-	 * Unified animation position: delegates to RouteAnimator if on-route,
-	 * otherwise falls back to SplineRenderer.
+	 * Ingest a pre-built BusLocation (for simulation/playback replay).
 	 */
-	getAnimatedPosition(busId: string, nowMs: number): { lat: number; lng: number; isFrozen: boolean } | null {
-		if (this.mapMatcher.isOnRoute(busId)) {
-			const result = this.routeAnimator.getAnimatedPosition(busId, nowMs);
-			if (result) return result;
+	ingestReading(bus: BusLocation): void {
+		const dirForKey = bus.gtfsDirectionId ?? bus.direction;
+		const routeKey = `${bus.routeNr}:${dirForKey}`;
+		const prevRouteKey = this.lastRouteByBus.get(bus.busId);
+		if (prevRouteKey && prevRouteKey !== routeKey) {
+			this.rawBuffer.clearBus(bus.busId);
+			this.displayAnimator.resetBus(bus.busId);
+			this.trajectoryCache.delete(bus.busId);
 		}
-		return this.renderer.getAnimatedPosition(busId, nowMs);
+		this.lastRouteByBus.set(bus.busId, routeKey);
+
+		this.rawBuffer.ingest({
+			busId: bus.busId,
+			routeNr: bus.routeNr,
+			tripId: bus.tripId,
+			lat: bus.lat,
+			lng: bus.lng,
+			direction: bus.direction,
+			timestamp: bus.timestamp,
+			headsign: bus.headsign,
+			nextStops: bus.nextStops,
+			gtfsDirectionId: bus.gtfsDirectionId,
+		});
 	}
 
-	/** Reset speed calculator state for a specific bus. */
+	/**
+	 * Process a display frame at the given cursor time.
+	 * Cleans trajectories, calculates speeds, detects violations.
+	 * Returns processed BusLocations ready for the UI.
+	 */
+	processFrame(displayCursorMs: number): BusLocation[] {
+		const results: BusLocation[] = [];
+		const busIds = this.rawBuffer.getActiveBusIds();
+
+		for (const busId of busIds) {
+			const window = this.rawBuffer.getWindow(
+				busId,
+				displayCursorMs - CLEANING_LOOKBACK_MS,
+				displayCursorMs + CLEANING_LOOKAHEAD_MS,
+			);
+
+			if (window.length < 2) continue;
+
+			// Clean trajectory
+			const trajectory = this.trajectoryCleaner.clean(
+				window,
+				this.mapMatcher,
+				this.gtfsService,
+				this.routeShapeIndex,
+			);
+
+			if (!trajectory || !trajectory.isValid) continue;
+
+			// Update display animator with cleaned trajectory
+			this.displayAnimator.updateTrajectory(busId, trajectory);
+			this.trajectoryCache.set(busId, trajectory);
+
+			// Get position and speed at display cursor time
+			const position = trajectory.positionAtTime(displayCursorMs);
+			if (!position) continue;
+
+			const speed = trajectory.speedAtTime(displayCursorMs);
+			const bearing = trajectory.bearingAtTime(displayCursorMs);
+
+			// Speed limit lookup on cleaned position
+			const limitResult = this.speedLimitService.getSpeedLimit(position.lat, position.lng);
+
+			// Get metadata from the latest reading in the window
+			const latest = window[window.length - 1];
+			const isStationary = trajectory.isStationaryAtTime(displayCursorMs);
+
+			// Determine match confidence from the nearest cleaned point
+			let matchConfidence = trajectory.points[0]?.matchConfidence ?? 'low';
+			for (const pt of trajectory.points) {
+				if (pt.timestamp <= displayCursorMs) {
+					matchConfidence = pt.matchConfidence;
+				} else break;
+			}
+
+			// Check if near stop at display cursor time
+			let isNearStop = false;
+			for (const pt of trajectory.points) {
+				if (pt.timestamp <= displayCursorMs) {
+					isNearStop = pt.isNearStop;
+				} else break;
+			}
+
+			// Violation detection
+			const isViolation = this.checkViolation(
+				busId,
+				isStationary ? 0 : speed,
+				limitResult.speedLimitKmh,
+				displayCursorMs,
+				latest.routeNr,
+			);
+
+			// Find snapped position at cursor (for distAlongRouteM)
+			let distAlongRouteM: number | undefined;
+			let snappedLat: number | undefined;
+			let snappedLng: number | undefined;
+			for (const pt of trajectory.points) {
+				if (pt.timestamp <= displayCursorMs) {
+					distAlongRouteM = pt.distAlongRouteM;
+					snappedLat = pt.snappedLat;
+					snappedLng = pt.snappedLng;
+				} else break;
+			}
+
+			results.push({
+				busId,
+				routeNr: latest.routeNr,
+				tripId: latest.tripId,
+				lat: position.lat,
+				lng: position.lng,
+				direction: bearing || latest.direction,
+				timestamp: displayCursorMs,
+				headsign: latest.headsign,
+				speedKmh: isStationary ? 0 : speed,
+				speedLimitKmh: limitResult.speedLimitKmh,
+				speedLimitMatch: limitResult.match,
+				speedLimitRoad: limitResult.roadName,
+				isViolation,
+				matchConfidence,
+				snappedLat,
+				snappedLng,
+				distAlongRouteM,
+				isNearStop,
+				gtfsDirectionId: latest.gtfsDirectionId,
+			});
+		}
+
+		// Prune old buffer data
+		this.rawBuffer.prune(displayCursorMs - RAW_BUFFER_RETENTION_MS);
+
+		return results;
+	}
+
+	/**
+	 * Get animated position for 60fps rendering.
+	 * Delegates to DisplayAnimator which interpolates along cleaned trajectories.
+	 */
+	getAnimatedPosition(busId: string, displayTimeMs: number): { lat: number; lng: number; isFrozen: boolean } | null {
+		const result = this.displayAnimator.getPosition(busId, displayTimeMs);
+		if (!result) return null;
+		return { lat: result.lat, lng: result.lng, isFrozen: result.isFrozen };
+	}
+
+	/** Reset state for a specific bus. */
 	resetBus(busId: string): void {
-		this.renderer.resetBus(busId);
+		this.rawBuffer.clearBus(busId);
+		this.displayAnimator.resetBus(busId);
 		this.mapMatcher.resetBus(busId);
-		this.routeAnimator.resetBus(busId);
-		this.lastUpdateByBus.delete(busId);
+		this.trajectoryCache.delete(busId);
 		this.lastRouteByBus.delete(busId);
 		this.lastLimitByBus.delete(busId);
 		this.limitTransitions.delete(busId);
@@ -87,21 +257,20 @@ export class CollectionService {
 
 	/** Reset all state. */
 	resetAll(): void {
-		this.renderer.resetAll();
+		this.rawBuffer.clearAll();
+		this.displayAnimator.resetAll();
 		this.mapMatcher.resetAll();
-		this.routeAnimator.resetAll();
-		this.lastUpdateByBus.clear();
+		this.trajectoryCache.clear();
 		this.lastRouteByBus.clear();
 		this.lastLimitByBus.clear();
 		this.limitTransitions.clear();
 	}
 
-	/** Remove stale bus states that haven't been updated recently. */
+	/** Remove stale states. */
 	cleanupStale(): void {
-		this.renderer.cleanupStale();
+		this.displayAnimator.cleanupStale();
 		this.mapMatcher.cleanupStale();
-		this.routeAnimator.cleanupStale();
-		// Clean up expired zone transitions (no bus data = no natural cleanup)
+
 		const now = Date.now();
 		for (const [busId, transition] of this.limitTransitions) {
 			if (now - transition.transitionTime > ZONE_TRANSITION_GRACE_MS * 2) {
@@ -110,31 +279,23 @@ export class CollectionService {
 		}
 	}
 
-	// --- Private ---
+	// --- Violation detection (unchanged logic, cleaner input) ---
 
-	/**
-	 * Check if a bus is violating its speed limit, with zone transition grace.
-	 *
-	 * When a bus enters a zone with a LOWER speed limit, it gets a brief grace
-	 * period to decelerate. The effective limit ramps linearly from the old limit
-	 * to the new limit over ZONE_TRANSITION_GRACE_MS.
-	 *
-	 * Exception: if the bus exceeds even the OLD (higher) limit + grace, it's
-	 * flagged immediately — it was already speeding before the zone change.
-	 */
-	private checkViolation(busId: string, speed: number, currentLimit: number, timestamp: number, routeNr?: string): boolean {
+	private checkViolation(
+		busId: string,
+		speed: number,
+		currentLimit: number,
+		timestamp: number,
+		routeNr?: string,
+	): boolean {
 		if (speed <= 0) return false;
 		if (routeNr && VIOLATION_SUPPRESSED_ROUTES.has(routeNr)) return false;
 
 		const prevLimit = this.lastLimitByBus.get(busId);
 		this.lastLimitByBus.set(busId, currentLimit);
 
-		// Detect zone transitions
 		if (prevLimit != null) {
 			if (currentLimit < prevLimit) {
-				// Limit decreased — start or extend grace period.
-				// For cascading drops (80→50→30), keep the highest prevLimit
-				// so the ramp covers the full deceleration envelope.
 				const existing = this.limitTransitions.get(busId);
 				this.limitTransitions.set(busId, {
 					prevLimit: existing ? Math.max(existing.prevLimit, prevLimit) : prevLimit,
@@ -142,112 +303,24 @@ export class CollectionService {
 					transitionTime: existing ? existing.transitionTime : timestamp,
 				});
 			} else if (currentLimit > prevLimit) {
-				// Limit increased — clear any pending grace (no grace needed entering a faster zone)
 				this.limitTransitions.delete(busId);
 			}
 		}
 
-		// Check if we're in an active grace period
 		const transition = this.limitTransitions.get(busId);
 		if (transition && currentLimit === transition.newLimit) {
 			const elapsed = timestamp - transition.transitionTime;
 			if (elapsed >= 0 && elapsed < ZONE_TRANSITION_GRACE_MS) {
-				// Bus was already speeding before zone change — flag immediately
 				if (speed > transition.prevLimit + VIOLATION_GRACE_KMH) {
 					return true;
 				}
-				// Ramp effective limit from old to new over grace window
 				const t = elapsed / ZONE_TRANSITION_GRACE_MS;
 				const effectiveLimit = transition.prevLimit + (transition.newLimit - transition.prevLimit) * t;
 				return speed > effectiveLimit + VIOLATION_GRACE_KMH;
 			}
-			// Grace expired
 			this.limitTransitions.delete(busId);
 		}
 
-		// Normal case: no transition active
 		return speed > currentLimit + VIOLATION_GRACE_KMH;
-	}
-
-	private processBusFix(bus: BusLocation): BusLocation | null {
-		// Detect route/direction change — prefer GTFS direction (0/1) over compass bearing
-		const dirForKey = bus.gtfsDirectionId ?? bus.direction;
-		const routeKey = `${bus.routeNr}:${dirForKey}`;
-		const prevRouteKey = this.lastRouteByBus.get(bus.busId);
-		if (prevRouteKey && prevRouteKey !== routeKey) {
-			this.mapMatcher.resetBus(bus.busId);
-			this.routeAnimator.resetBus(bus.busId);
-		}
-		this.lastRouteByBus.set(bus.busId, routeKey);
-
-		// Try route-constrained pipeline
-		if (this.gtfsService && this.routeShapeIndex) {
-			const dirForLookup = bus.gtfsDirectionId ?? bus.direction;
-			const shapeId = this.gtfsService.getShapeId(bus.tripId, bus.routeNr, dirForLookup);
-			if (shapeId) {
-				const shapeData = this.routeShapeIndex.get(shapeId);
-				if (shapeData) {
-					const snapResult = this.mapMatcher.snap(
-						bus.busId, bus.lat, bus.lng, bus.timestamp, shapeData, bus.nextStops,
-					);
-					if (snapResult && snapResult.confidence !== 'off-route') {
-						// Route-constrained: use snapped position for speed limit
-						this.routeAnimator.ingest(bus.busId, snapResult, shapeData);
-
-						// Also feed spline renderer — use its speed as fallback during warmup
-						const rendererResult = this.renderer.ingestReading(bus.busId, bus);
-
-						const limitResult = this.speedLimitService.getSpeedLimit(
-							snapResult.snappedLat, snapResult.snappedLng,
-						);
-						// Blend speed sources: when map matcher first emits speed after warmup,
-					// EMA-blend with spline renderer to avoid a jump (route dist > haversine on curves).
-					let speed: number;
-					if (snapResult.speedKmh != null) {
-						const fallback = rendererResult?.speedKmh ?? 0;
-						if (fallback > 0 && Math.abs(snapResult.speedKmh - fallback) > 5) {
-							speed = snapResult.speedKmh * 0.6 + fallback * 0.4;
-						} else {
-							speed = snapResult.speedKmh;
-						}
-					} else {
-						speed = rendererResult?.speedKmh ?? 0;
-					}
-						const isViolation = this.checkViolation(
-							bus.busId, speed, limitResult.speedLimitKmh, bus.timestamp, bus.routeNr,
-						);
-
-						return copyBusLocationWith(bus, {
-							speedKmh: speed,
-							speedLimitKmh: limitResult.speedLimitKmh,
-							speedLimitMatch: limitResult.match,
-							speedLimitRoad: limitResult.roadName,
-							isViolation,
-							matchConfidence: snapResult.confidence,
-							snappedLat: snapResult.snappedLat,
-							snappedLng: snapResult.snappedLng,
-							distAlongRouteM: snapResult.distAlongRouteM,
-							isNearStop: snapResult.isNearStop,
-						});
-					}
-				}
-			}
-		}
-
-		// Fallback: spline renderer pipeline (existing behavior)
-		const withSpeed = this.renderer.ingestReading(bus.busId, bus);
-		if (!withSpeed) return null;
-
-		const limitResult = this.speedLimitService.getSpeedLimit(bus.lat, bus.lng);
-		const isViolation = this.checkViolation(
-			bus.busId, withSpeed.speedKmh ?? 0, limitResult.speedLimitKmh, bus.timestamp, bus.routeNr,
-		);
-
-		return copyBusLocationWith(withSpeed, {
-			speedLimitKmh: limitResult.speedLimitKmh,
-			speedLimitMatch: limitResult.match,
-			speedLimitRoad: limitResult.roadName,
-			isViolation,
-		});
 	}
 }

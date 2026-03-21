@@ -1,12 +1,14 @@
 <script lang="ts">
 	import { appStore } from '$lib/stores/app.svelte';
 	import { busStore } from '$lib/stores/buses.svelte';
+	import { collectionStore } from '$lib/stores/collection.svelte';
 	import TopBar from './TopBar.svelte';
 	import MapView from './MapView.svelte';
 	import Sidebar from './Sidebar.svelte';
 	import PlaybackBar from './PlaybackBar.svelte';
 	import SpeedGraph from './SpeedGraph.svelte';
 	import ViolationFlash from './ViolationFlash.svelte';
+	import LoadingScreen from './LoadingScreen.svelte';
 
 	// Time-of-day ambient tint (Iceland = UTC+0, no DST)
 	function getAmbientColor(): string {
@@ -35,6 +37,11 @@
 	const sidebarWidth = $derived(appStore.mode === 'stats' ? 420 : 320);
 	const chartBarLeft = $derived(
 		appStore.sidebarOpen ? sidebarWidth + 24 : 12
+	);
+
+	const isWarmingUp = $derived(
+		(collectionStore.isRecording || collectionStore.isMonitoring || collectionStore.isSimulating) &&
+		!collectionStore.isWarmedUp
 	);
 </script>
 
@@ -81,6 +88,11 @@
 		>
 			<PlaybackBar />
 		</div>
+	{/if}
+
+	<!-- Loading Screen (during 2-minute warmup) -->
+	{#if isWarmingUp}
+		<LoadingScreen />
 	{/if}
 
 	<!-- Violation screen flash -->

@@ -40,8 +40,15 @@ export const ZONE_TRANSITION_GRACE_MS = 8000; // grace period when entering a lo
 export const REYKJAVIK_LAT_DEG_TO_KM = 111.0;
 export const REYKJAVIK_LNG_DEG_TO_KM = 48.6;
 
+// 2-minute buffer pipeline
+export const DISPLAY_DELAY_MS = 120_000; // Display cursor offset from real-time (2 minutes)
+export const WARMUP_DURATION_MS = 120_000; // Loading screen duration (2 minutes)
+export const RAW_BUFFER_RETENTION_MS = 150_000; // How long to keep raw readings (2.5 minutes)
+export const CLEANING_LOOKBACK_MS = 30_000; // How far behind display cursor for context
+export const CLEANING_LOOKAHEAD_MS = 30_000; // How far ahead of display cursor for context
+
 // UI constants
-export const STALE_THRESHOLD_MS = 30_000; // 30 seconds
+export const STALE_THRESHOLD_MS = 180_000; // 3 minutes (accounts for 2 min display delay + 1 min grace)
 export const SPEED_GRAPH_HISTORY_MINUTES = 30;
 export const VIOLATION_APPROACHING_RATIO = 0.8; // 80% of limit = approaching
 

@@ -238,6 +238,93 @@ export class MapMatcher {
 		};
 	}
 
+	/**
+	 * Stateless snap: project a single GPS point onto the route polyline
+	 * without tracking per-bus state. Used by TrajectoryCleaner for batch processing.
+	 *
+	 * Returns snap result with position, distance, and confidence — but no speed
+	 * (speed is calculated by the trajectory cleaner from the cleaned sequence).
+	 */
+	snapStateless(
+		lat: number,
+		lng: number,
+		shapeData: RouteShapeData,
+		nextStops?: NextStop[],
+	): SnapResult | null {
+		const vertices = shapeData.vertices;
+		if (vertices.length < 2) return null;
+
+		// Resolve nextStops constraint
+		const nextStopDistAlongM = nextStops && nextStops.length > 0
+			? this.resolveNextStopDistAlong(nextStops[0], shapeData)
+			: null;
+
+		// Always use grid search (no state to do nearby search from)
+		let candidateIndices = this.findCandidatesFromGrid(lat, lng, shapeData);
+		if (candidateIndices.length === 0) {
+			candidateIndices = [];
+			for (let i = 0; i < vertices.length - 1; i++) candidateIndices.push(i);
+		}
+
+		// Apply nextStops constraint
+		if (nextStopDistAlongM != null) {
+			candidateIndices = this.constrainCandidatesByNextStop(
+				candidateIndices, nextStopDistAlongM, shapeData, undefined,
+			);
+		}
+
+		// Project GPS onto each candidate, pick closest
+		let bestDist = Infinity;
+		let bestSegIdx = -1;
+		let bestT = 0;
+		let bestProjLat = lat;
+		let bestProjLng = lng;
+
+		for (const segIdx of candidateIndices) {
+			const a = vertices[segIdx];
+			const b = vertices[segIdx + 1];
+			const proj = projectPointOnSegment(lat, lng, a.lat, a.lng, b.lat, b.lng);
+			if (proj.distanceM < bestDist) {
+				bestDist = proj.distanceM;
+				bestSegIdx = segIdx;
+				bestT = proj.t;
+				bestProjLat = proj.projLat;
+				bestProjLng = proj.projLng;
+			}
+		}
+
+		if (bestSegIdx < 0) return null;
+
+		const segStart = vertices[bestSegIdx].cumDistM;
+		const segEnd = vertices[bestSegIdx + 1].cumDistM;
+		const distAlongM = segStart + bestT * (segEnd - segStart);
+
+		let confidence: MatchConfidence;
+		if (bestDist > MAX_SNAP_DISTANCE_M) {
+			confidence = 'off-route';
+		} else if (bestDist > LOW_CONFIDENCE_SNAP_DISTANCE_M) {
+			confidence = 'low';
+		} else {
+			confidence = 'high';
+		}
+
+		let isNearStop = false;
+		if (shapeData.stopDistancesM.length > 0) {
+			isNearStop = this.checkNearStop(distAlongM, shapeData.stopDistancesM);
+		}
+
+		return {
+			snappedLat: bestProjLat,
+			snappedLng: bestProjLng,
+			distAlongRouteM: distAlongM,
+			segmentIdx: bestSegIdx,
+			lateralOffsetM: bestDist,
+			confidence,
+			speedKmh: null, // stateless — no speed calculation
+			isNearStop,
+		};
+	}
+
 	/** Check if a bus is currently matched to a route. */
 	isOnRoute(busId: string): boolean {
 		const state = this.states.get(busId);

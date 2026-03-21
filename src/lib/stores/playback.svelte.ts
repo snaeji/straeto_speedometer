@@ -44,14 +44,12 @@ class PlaybackStore {
 		if (this.isPlaying || !this.hasData) return;
 		this.isPlaying = true;
 
-		// Reset pipeline state so stale live data doesn't affect playback
+		// Reset pipeline state
 		collectionStore.collectionService?.resetAll();
-		// Set renderer time source to playback time
-		collectionStore.setTimeSource(() => this.currentTimestamp);
 
-		const tickMs = 100; // update every 100ms
+		const tickMs = 100;
 		this.timer = setInterval(() => {
-			const advance = (tickMs / 1000) * this.speed * 1000; // ms of real time per tick
+			const advance = (tickMs / 1000) * this.speed * 1000;
 			this.currentTimestamp += advance;
 
 			if (this.currentTimestamp >= this.endTimestamp) {
@@ -73,15 +71,11 @@ class PlaybackStore {
 			this.timer = null;
 		}
 		this.isPlaying = false;
-
-		// Restore real-time clock and flush stale animation buffers
-		collectionStore.setTimeSource(() => Date.now());
 		collectionStore.collectionService?.resetAll();
 	}
 
 	async seekTo(timestamp: number) {
 		this.currentTimestamp = Math.max(this.startTimestamp, Math.min(this.endTimestamp, timestamp));
-		// Reset animation buffers so stale segment state doesn't produce jerky positions
 		collectionStore.collectionService?.resetAll();
 		const version = ++this.seekVersion;
 		await this.loadCurrentFrame(version);
@@ -112,18 +106,20 @@ class PlaybackStore {
 
 		if (version !== undefined && version !== this.seekVersion) return;
 
+		// Feed locations into the raw buffer for trajectory cleaning
+		const svc = collectionStore.collectionService;
+		if (svc) {
+			for (const loc of locations) {
+				svc.ingestReading(loc);
+			}
+		}
+
+		// Pick latest per bus for display
 		const latestByBus = new Map<string, typeof locations[number]>();
 		for (const loc of locations) {
 			const existing = latestByBus.get(loc.busId);
 			if (!existing || loc.timestamp > existing.timestamp) {
 				latestByBus.set(loc.busId, loc);
-			}
-		}
-
-		const renderer = collectionStore.renderer;
-		if (renderer) {
-			for (const loc of latestByBus.values()) {
-				renderer.ingestReading(loc.busId, loc);
 			}
 		}
 
