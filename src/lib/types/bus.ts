@@ -9,6 +9,21 @@ export interface SpeedLimitResult {
 
 export type MatchConfidence = 'high' | 'low' | 'off-route';
 
+export interface NextStop {
+	stopId: string;
+	name: string;
+	lat: number;
+	lng: number;
+	arrival: string; // "HH:MM" from API
+}
+
+export interface ApiTripInfo {
+	direction: number; // GTFS direction_id: 0 or 1
+	routeId: string;
+	serviceId: string;
+	headsign: string;
+}
+
 export interface BusLocation {
 	busId: string;
 	routeNr: string;
@@ -28,6 +43,8 @@ export interface BusLocation {
 	snappedLng?: number;
 	distAlongRouteM?: number;
 	isNearStop?: boolean;
+	nextStops?: NextStop[]; // transient — not stored in JSONL
+	gtfsDirectionId?: number; // 0 or 1, from API trip.direction
 }
 
 export interface BusLocationUpdate extends BusLocation {
@@ -49,6 +66,8 @@ export function busLocationFromApi(json: ApiResult, timestamp: number): BusLocat
 		timestamp,
 		headsign: json.headsign ?? undefined,
 		isViolation: false,
+		nextStops: json.nextStops,
+		gtfsDirectionId: json.trip?.direction,
 	};
 }
 
@@ -115,6 +134,8 @@ export interface ApiResult {
 	lng: number;
 	direction: number;
 	headsign: string | null;
+	nextStops?: NextStop[];
+	trip?: ApiTripInfo;
 }
 
 export interface JsonLineRecord {

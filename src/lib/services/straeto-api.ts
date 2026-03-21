@@ -1,11 +1,62 @@
-import { STRAETO_API_URL, PERSISTED_QUERY_HASH, ALL_ROUTES } from '$lib/utils/constants';
-import { busLocationFromApi, type ApiResult, type BusLocation } from '$lib/types/bus';
+import { STRAETO_API_URL, ALL_ROUTES } from '$lib/utils/constants';
+import { busLocationFromApi, type ApiResult, type ApiTripInfo, type BusLocation, type NextStop } from '$lib/types/bus';
 
 export class StraetoApiError extends Error {
 	constructor(message: string) {
 		super(message);
 		this.name = 'StraetoApiError';
 	}
+}
+
+const FULL_QUERY = `query BusLocationByRoute($routes: [String!]!) {
+	BusLocationByRoute(routes: $routes) {
+		lastUpdate
+		results {
+			busId tripId routeNr lat lng direction headsign tag
+			nextStops {
+				stop { id name lat lon }
+				arrival
+			}
+			trip {
+				direction routeId serviceId headsign
+			}
+		}
+	}
+}`;
+
+function validateNextStops(raw: unknown): NextStop[] | undefined {
+	if (!Array.isArray(raw) || raw.length === 0) return undefined;
+	const stops: NextStop[] = [];
+	for (const item of raw) {
+		if (typeof item !== 'object' || item === null) continue;
+		const obj = item as Record<string, unknown>;
+		const stop = obj.stop as Record<string, unknown> | undefined;
+		if (!stop || typeof stop !== 'object') continue;
+		const id = stop.id;
+		const lat = stop.lat;
+		const lon = stop.lon;
+		if (id == null || typeof lat !== 'number' || !isFinite(lat) || typeof lon !== 'number' || !isFinite(lon)) continue;
+		stops.push({
+			stopId: String(id),
+			name: typeof stop.name === 'string' ? stop.name : '',
+			lat,
+			lng: lon, // API uses "lon", we normalize to "lng"
+			arrival: typeof obj.arrival === 'string' ? obj.arrival : '',
+		});
+	}
+	return stops.length > 0 ? stops : undefined;
+}
+
+function validateTrip(raw: unknown): ApiTripInfo | undefined {
+	if (typeof raw !== 'object' || raw === null) return undefined;
+	const obj = raw as Record<string, unknown>;
+	if (typeof obj.direction !== 'number' || (obj.direction !== 0 && obj.direction !== 1)) return undefined;
+	return {
+		direction: obj.direction,
+		routeId: typeof obj.routeId === 'string' ? obj.routeId : '',
+		serviceId: typeof obj.serviceId === 'string' ? obj.serviceId : '',
+		headsign: typeof obj.headsign === 'string' ? obj.headsign : '',
+	};
 }
 
 function validateApiResult(r: Record<string, unknown>): ApiResult | null {
@@ -23,29 +74,28 @@ function validateApiResult(r: Record<string, unknown>): ApiResult | null {
 		lng: r.lng,
 		direction: r.direction,
 		headsign: typeof r.headsign === 'string' ? r.headsign : null,
+		nextStops: validateNextStops(r.nextStops),
+		trip: validateTrip(r.trip),
 	};
 }
 
 /**
  * Fetches current bus positions for all routes from the Straeto GraphQL API.
+ * Uses full GraphQL query (not persisted hash) to include nextStops and trip data.
  * Returns [timestamp in epoch ms, list of BusLocation].
  */
 export async function fetchBusLocations(): Promise<[number, BusLocation[]]> {
 	const body = JSON.stringify({
-		extensions: {
-			persistedQuery: {
-				version: 1,
-				sha256Hash: PERSISTED_QUERY_HASH,
-			},
-		},
-		variables: {
-			routes: ALL_ROUTES,
-		},
+		query: FULL_QUERY,
+		variables: { routes: ALL_ROUTES },
 	});
 
 	const response = await fetch(STRAETO_API_URL, {
 		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
+		headers: {
+			'Content-Type': 'application/json',
+			'apollo-require-preflight': 'true',
+		},
 		body,
 	});
 

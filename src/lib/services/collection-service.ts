@@ -169,8 +169,9 @@ export class CollectionService {
 	}
 
 	private processBusFix(bus: BusLocation): BusLocation | null {
-		// Detect route/direction change
-		const routeKey = `${bus.routeNr}:${bus.direction}`;
+		// Detect route/direction change — prefer GTFS direction (0/1) over compass bearing
+		const dirForKey = bus.gtfsDirectionId ?? bus.direction;
+		const routeKey = `${bus.routeNr}:${dirForKey}`;
 		const prevRouteKey = this.lastRouteByBus.get(bus.busId);
 		if (prevRouteKey && prevRouteKey !== routeKey) {
 			this.mapMatcher.resetBus(bus.busId);
@@ -180,12 +181,13 @@ export class CollectionService {
 
 		// Try route-constrained pipeline
 		if (this.gtfsService && this.routeShapeIndex) {
-			const shapeId = this.gtfsService.getShapeId(bus.tripId, bus.routeNr, bus.direction);
+			const dirForLookup = bus.gtfsDirectionId ?? bus.direction;
+			const shapeId = this.gtfsService.getShapeId(bus.tripId, bus.routeNr, dirForLookup);
 			if (shapeId) {
 				const shapeData = this.routeShapeIndex.get(shapeId);
 				if (shapeData) {
 					const snapResult = this.mapMatcher.snap(
-						bus.busId, bus.lat, bus.lng, bus.timestamp, shapeData,
+						bus.busId, bus.lat, bus.lng, bus.timestamp, shapeData, bus.nextStops,
 					);
 					if (snapResult && snapResult.confidence !== 'off-route') {
 						// Route-constrained: use snapped position for speed limit

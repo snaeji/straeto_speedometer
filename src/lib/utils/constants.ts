@@ -56,6 +56,7 @@ export const MATCH_BACKWARD_TOLERANCE_M = 100;
 export const MAX_SNAP_DISTANCE_M = 75;
 export const LOW_CONFIDENCE_SNAP_DISTANCE_M = 40;
 export const STOP_PROXIMITY_M = 30;
+export const NEXT_STOP_FORWARD_MARGIN_M = 150; // tolerance for bus past a stop before API updates
 export const ROUTE_GRID_LAT_STEP = 0.0009; // ~100m
 export const ROUTE_GRID_LNG_STEP = 0.00206; // ~100m at 64N
 

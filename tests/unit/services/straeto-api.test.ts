@@ -185,3 +185,127 @@ describe('validateApiResult edge cases (tested via fetchBusLocations)', () => {
 		expect(buses).toHaveLength(0);
 	});
 });
+
+describe('nextStops and trip parsing', () => {
+	it('parses nextStops from response', async () => {
+		mockFetch({
+			data: {
+				BusLocationByRoute: {
+					lastUpdate: '2024-03-15T12:00:00Z',
+					results: [{
+						busId: 'b1', routeNr: '1', tripId: 't1', lat: 64.14, lng: -21.93, direction: 0,
+						nextStops: [
+							{ stop: { id: 90000834, name: 'Gamla Hringbraut', lat: 64.138, lon: -21.932 }, arrival: '08:28' },
+							{ stop: { id: 90000845, name: 'Læknagarður', lat: 64.135, lon: -21.931 }, arrival: '08:30' },
+						],
+						trip: { direction: 0, routeId: '1', serviceId: '1309', headsign: 'Hlemmur' },
+					}],
+				},
+			},
+		});
+
+		const [, buses] = await fetchBusLocations();
+		expect(buses).toHaveLength(1);
+		expect(buses[0].nextStops).toBeDefined();
+		expect(buses[0].nextStops).toHaveLength(2);
+		expect(buses[0].nextStops![0].stopId).toBe('90000834');
+		expect(buses[0].nextStops![0].name).toBe('Gamla Hringbraut');
+		expect(buses[0].nextStops![0].lat).toBe(64.138);
+		expect(buses[0].nextStops![0].lng).toBe(-21.932); // normalized from lon
+		expect(buses[0].nextStops![0].arrival).toBe('08:28');
+	});
+
+	it('handles missing nextStops gracefully', async () => {
+		mockFetch({
+			data: {
+				BusLocationByRoute: {
+					lastUpdate: '2024-03-15T12:00:00Z',
+					results: [{
+						busId: 'b1', routeNr: '1', tripId: 't1', lat: 64.14, lng: -21.93, direction: 0,
+					}],
+				},
+			},
+		});
+
+		const [, buses] = await fetchBusLocations();
+		expect(buses).toHaveLength(1);
+		expect(buses[0].nextStops).toBeUndefined();
+	});
+
+	it('parses trip.direction as gtfsDirectionId', async () => {
+		mockFetch({
+			data: {
+				BusLocationByRoute: {
+					lastUpdate: '2024-03-15T12:00:00Z',
+					results: [{
+						busId: 'b1', routeNr: '1', tripId: 't1', lat: 64.14, lng: -21.93, direction: 263,
+						trip: { direction: 1, routeId: '1', serviceId: '1309', headsign: 'Test' },
+					}],
+				},
+			},
+		});
+
+		const [, buses] = await fetchBusLocations();
+		expect(buses[0].direction).toBe(263); // compass bearing preserved
+		expect(buses[0].gtfsDirectionId).toBe(1); // GTFS direction extracted
+	});
+
+	it('handles missing trip gracefully', async () => {
+		mockFetch({
+			data: {
+				BusLocationByRoute: {
+					lastUpdate: '2024-03-15T12:00:00Z',
+					results: [{
+						busId: 'b1', routeNr: '1', tripId: 't1', lat: 64.14, lng: -21.93, direction: 0,
+					}],
+				},
+			},
+		});
+
+		const [, buses] = await fetchBusLocations();
+		expect(buses[0].gtfsDirectionId).toBeUndefined();
+	});
+
+	it('rejects trip with invalid direction', async () => {
+		mockFetch({
+			data: {
+				BusLocationByRoute: {
+					lastUpdate: '2024-03-15T12:00:00Z',
+					results: [{
+						busId: 'b1', routeNr: '1', tripId: 't1', lat: 64.14, lng: -21.93, direction: 0,
+						trip: { direction: 5, routeId: '1', serviceId: '1309', headsign: 'Test' },
+					}],
+				},
+			},
+		});
+
+		const [, buses] = await fetchBusLocations();
+		expect(buses[0].gtfsDirectionId).toBeUndefined();
+	});
+
+	it('sends full query with apollo-require-preflight header', async () => {
+		mockFetch({
+			data: {
+				BusLocationByRoute: {
+					lastUpdate: '2024-03-15T12:00:00Z',
+					results: [],
+				},
+			},
+		});
+
+		await fetchBusLocations();
+
+		const fetchCall = (fetch as ReturnType<typeof vi.fn>).mock.calls[0];
+		const [, options] = fetchCall;
+		const body = JSON.parse(options.body);
+
+		// Should use full query, not persisted hash
+		expect(body.query).toBeDefined();
+		expect(body.extensions).toBeUndefined();
+		expect(body.query).toContain('nextStops');
+		expect(body.query).toContain('trip');
+
+		// Should have apollo-require-preflight header
+		expect(options.headers['apollo-require-preflight']).toBe('true');
+	});
+});

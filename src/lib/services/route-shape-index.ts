@@ -23,6 +23,7 @@ export interface RouteShapeData {
 	totalLengthM: number;
 	grid: Map<string, number[]>; // cell key -> segment indices
 	stopDistancesM: number[]; // distance along route for each stop
+	stopIds: string[]; // stop IDs in sequence order (parallel to stopDistancesM)
 }
 
 function gridKey(lat: number, lng: number): string {
@@ -111,10 +112,12 @@ export class RouteShapeIndex {
 				}
 			}
 
-			// Snap stop positions to route
+			// Snap stop positions to route and record stop IDs
 			const stopDistancesM: number[] = [];
+			const stopIds: string[] = [];
 			const stops = gtfsService.getStopSequence(routeNr, directionId);
 			for (const stop of stops) {
+				stopIds.push(stop.stopId);
 				const snap = snapPointToPolyline(stop.lat, stop.lng, vertices);
 				stopDistancesM.push(snap ? snap.distAlongM : 0);
 			}
@@ -127,6 +130,7 @@ export class RouteShapeIndex {
 				totalLengthM: cumDist,
 				grid,
 				stopDistancesM,
+				stopIds,
 			});
 		}
 	}

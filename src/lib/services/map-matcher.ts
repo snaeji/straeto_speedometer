@@ -3,6 +3,9 @@
  *
  * Maintains per-bus state tracking which segment the bus is on,
  * enforces monotonicity, and computes speed from distance-along-route.
+ *
+ * When nextStops data is available, constrains the search to segments
+ * before the first upcoming stop — resolving ambiguity at route overlaps.
  */
 
 import type { RouteShapeData } from './route-shape-index';
@@ -16,11 +19,15 @@ import {
 	CONSERVATIVE_SPEED_FACTOR,
 	OUTLIER_MAX_SPEED_KMH,
 	SPEED_EMA_ALPHA,
+	NEXT_STOP_FORWARD_MARGIN_M,
 } from '$lib/utils/constants';
-import type { MatchConfidence } from '$lib/types/bus';
+import type { MatchConfidence, NextStop } from '$lib/types/bus';
 
 /** Number of consistent fixes required before emitting speed. */
 const MATCH_WARMUP_FIXES = 4;
+
+/** Max distance for a nextStop geometric snap to be trusted. */
+const NEXT_STOP_MAX_SNAP_DIST_M = 100;
 
 interface MatchState {
 	shapeId: string;
@@ -59,6 +66,9 @@ export class MapMatcher {
 	/**
 	 * Snap a GPS fix to the route polyline.
 	 * Returns null if snap fails (no shape data, no candidate segments).
+	 *
+	 * When nextStops is provided, constrains the segment search to only
+	 * segments before the first upcoming stop on the route.
 	 */
 	snap(
 		busId: string,
@@ -66,11 +76,17 @@ export class MapMatcher {
 		lng: number,
 		timestamp: number,
 		shapeData: RouteShapeData,
+		nextStops?: NextStop[],
 	): SnapResult | null {
 		const vertices = shapeData.vertices;
 		if (vertices.length < 2) return null;
 
 		const state = this.states.get(busId);
+
+		// Resolve nextStops constraint (distance along route to first upcoming stop)
+		const nextStopDistAlongM = nextStops && nextStops.length > 0
+			? this.resolveNextStopDistAlong(nextStops[0], shapeData)
+			: null;
 
 		// Find candidate segments
 		let candidateIndices: number[];
@@ -85,6 +101,13 @@ export class MapMatcher {
 		} else {
 			// Subsequent fix: search within window around last match
 			candidateIndices = this.findCandidatesNearby(state.lastDistAlongM, shapeData);
+		}
+
+		// Apply nextStops constraint to narrow candidates
+		if (nextStopDistAlongM != null) {
+			candidateIndices = this.constrainCandidatesByNextStop(
+				candidateIndices, nextStopDistAlongM, shapeData, state,
+			);
 		}
 
 		// Project GPS onto each candidate, pick closest
@@ -124,13 +147,20 @@ export class MapMatcher {
 			confidence = 'high';
 		}
 
+		// Post-snap validation: downgrade if snap is past the first upcoming stop
+		if (nextStopDistAlongM != null && confidence === 'high') {
+			if (distAlongM > nextStopDistAlongM + NEXT_STOP_FORWARD_MARGIN_M) {
+				confidence = 'low';
+			}
+		}
+
 		// Monotonicity: reject if bus appears to go backwards too far
 		if (state && state.shapeId === shapeData.shapeId) {
 			const backward = state.lastDistAlongM - distAlongM;
 			if (backward > MATCH_BACKWARD_TOLERANCE_M) {
 				// Might be a loop completion or terminal turnaround — reset
 				this.resetBus(busId);
-				return this.snap(busId, lat, lng, timestamp, shapeData);
+				return this.snap(busId, lat, lng, timestamp, shapeData, nextStops);
 			}
 		}
 
@@ -221,6 +251,71 @@ export class MapMatcher {
 	}
 
 	// --- Private helpers ---
+
+	/**
+	 * Resolve the distance-along-route for a nextStop.
+	 * Tries ID-based lookup first (O(1)), falls back to geometric snap.
+	 */
+	private resolveNextStopDistAlong(
+		nextStop: NextStop,
+		shapeData: RouteShapeData,
+	): number | null {
+		// Try ID-based lookup in the stop sequence
+		if (shapeData.stopIds) {
+			const idx = shapeData.stopIds.indexOf(nextStop.stopId);
+			if (idx >= 0 && idx < shapeData.stopDistancesM.length) {
+				return shapeData.stopDistancesM[idx];
+			}
+		}
+
+		// Fallback: geometric snap of stop coordinates to polyline
+		const vertices = shapeData.vertices;
+		if (vertices.length < 2) return null;
+
+		let bestDist = Infinity;
+		let bestDistAlong = 0;
+
+		for (let i = 0; i < vertices.length - 1; i++) {
+			const a = vertices[i];
+			const b = vertices[i + 1];
+			const proj = projectPointOnSegment(nextStop.lat, nextStop.lng, a.lat, a.lng, b.lat, b.lng);
+			if (proj.distanceM < bestDist) {
+				bestDist = proj.distanceM;
+				const segLen = b.cumDistM - a.cumDistM;
+				bestDistAlong = a.cumDistM + proj.t * segLen;
+			}
+		}
+
+		if (bestDist > NEXT_STOP_MAX_SNAP_DIST_M) return null;
+		return bestDistAlong;
+	}
+
+	/**
+	 * Narrow candidate segments to those before the first upcoming stop.
+	 * Falls back to the full candidate list if the constraint eliminates everything.
+	 */
+	private constrainCandidatesByNextStop(
+		candidates: number[],
+		firstStopDistAlongM: number,
+		shapeData: RouteShapeData,
+		state: MatchState | undefined,
+	): number[] {
+		const vertices = shapeData.vertices;
+		const maxDistAlongM = firstStopDistAlongM + NEXT_STOP_FORWARD_MARGIN_M;
+		const minDistAlongM = state && state.shapeId === shapeData.shapeId
+			? Math.max(0, state.lastDistAlongM - MATCH_BACKWARD_TOLERANCE_M)
+			: 0;
+
+		const constrained = candidates.filter((segIdx) => {
+			if (segIdx >= vertices.length - 1) return false;
+			const segStart = vertices[segIdx].cumDistM;
+			const segEnd = vertices[segIdx + 1].cumDistM;
+			return segEnd >= minDistAlongM && segStart <= maxDistAlongM;
+		});
+
+		// Safety fallback: if constraint eliminated all candidates, use originals
+		return constrained.length > 0 ? constrained : candidates;
+	}
 
 	private findCandidatesFromGrid(lat: number, lng: number, shapeData: RouteShapeData): number[] {
 		const grid = shapeData.grid;
