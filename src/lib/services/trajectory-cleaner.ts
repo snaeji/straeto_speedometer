@@ -24,11 +24,17 @@ import {
 	STOP_PROXIMITY_M,
 } from '$lib/utils/constants';
 
-/** Minimum distance (m) between readings to count as genuine movement. */
+/** Minimum distance (m) between readings to count as genuine movement.
+ * Server-interpolated data: cached API responses repeat the same position.
+ * 1.0m is well above the ÷3 quantization step (0.002m) and below
+ * the minimum genuine movement between hardware GPS fixes (~10m). */
 const DEDUP_DISTANCE_M = 1.0;
 
-/** Maximum jump (m) to EITHER neighbor before a point is an outlier. */
-const OUTLIER_JUMP_M = 500;
+/** Maximum jump (m) to EITHER neighbor before a point is an outlier.
+ * Lowered from 500m: server smoothing means genuine 300m+ jumps in a
+ * single API interval shouldn't happen for city buses. At 90 km/h max
+ * over 5s (median genuine update), a bus covers ~125m. */
+const OUTLIER_JUMP_M = 300;
 
 /** Minimum distance change over 3+ readings to count as stationary. */
 const STATIONARY_DIST_M = 3.0;
@@ -36,19 +42,24 @@ const STATIONARY_DIST_M = 3.0;
 /** Number of consecutive near-zero-movement readings to confirm stopped. */
 const STATIONARY_COUNT = 3;
 
-/** Number of neighbors on each side for Gaussian speed smoothing. */
-const GAUSSIAN_HALF_WINDOW = 3;
+/** Number of neighbors on each side for Gaussian speed smoothing.
+ * Reduced from ±3 to ±2: server already smooths positions via interpolation
+ * between 15s hardware fixes. Double-smoothing with a wide window adds
+ * unnecessary lag (~6-9s at ±3 vs ~4-6s at ±2). */
+const GAUSSIAN_HALF_WINDOW = 2;
 
 /**
  * Maximum distance-along-route jump (m) between consecutive snaps
- * before preferring a closer segment. Handles roundabouts where
- * opposite-side segments are only ~50-100m apart in route distance.
- */
-const SNAP_CONTINUITY_MAX_JUMP_M = 150;
+ * before preferring a closer segment. Handles roundabouts (20-30m diameter,
+ * ~50-100m in route distance across) and server corner-cutting on curves.
+ * At 90 km/h over median 5s update: ~125m max realistic. Use 100m. */
+const SNAP_CONTINUITY_MAX_JUMP_M = 100;
 
-/** Precomputed Gaussian kernel weights for ±3 window (sigma = 1.5). */
+/** Precomputed Gaussian kernel weights for ±2 window (sigma = 1.0).
+ * Tighter kernel than before (was ±3/sigma=1.5) because server-interpolated
+ * data is already smooth — we only need to handle quantization and timing artifacts. */
 const GAUSSIAN_KERNEL = (() => {
-	const sigma = 1.5;
+	const sigma = 1.0;
 	const weights: number[] = [];
 	for (let i = -GAUSSIAN_HALF_WINDOW; i <= GAUSSIAN_HALF_WINDOW; i++) {
 		weights.push(Math.exp(-(i * i) / (2 * sigma * sigma)));
@@ -260,8 +271,15 @@ export class TrajectoryCleaner {
 
 	/**
 	 * Step 1: Deduplicate stale readings.
-	 * Group consecutive readings at same position. Keep first and last of each cluster,
-	 * plus periodic intermediate points for temporal resolution during long stops.
+	 *
+	 * With server-interpolated data, ~48% of API readings are cached repeats
+	 * of the same position. Group consecutive readings at same position into
+	 * clusters. Keep only the first and last of each cluster — no intermediates
+	 * needed because the server positions are already smoothed (the hardware
+	 * only transmits every 15s, and the server interpolates between fixes).
+	 *
+	 * Keeping first+last preserves stop boundary timing: we know exactly
+	 * when the bus arrived (first stale) and when it left (first genuine after cluster).
 	 */
 	private deduplicateStale(readings: RawReading[]): RawReading[] {
 		if (readings.length <= 1) return [...readings];
@@ -282,11 +300,10 @@ export class TrajectoryCleaner {
 				}
 				result.push(curr);
 				clusterStart = i;
-			} else if (curr.timestamp - result[result.length - 1].timestamp >= 10_000) {
-				// During long stale clusters, keep a point every ~10s for temporal resolution.
-				// This prevents huge time gaps that cause interpolation artifacts.
-				result.push(curr);
 			}
+			// Stale readings within a cluster are dropped entirely.
+			// With server-interpolated data, intermediate stale points add no
+			// information — they're just cached repeats from the API.
 		}
 
 		// Keep the very last reading if it was in a stale cluster

@@ -15,8 +15,11 @@ export const POLLING_INTERVAL_MS = 2000;
 // Outlier rejection (city buses are governed; 90 km/h filters GPS spikes while allowing highway speeds)
 export const OUTLIER_MAX_SPEED_KMH = 90.0;
 
-// Conservative speed factor
-export const CONSERVATIVE_SPEED_FACTOR = 0.95;
+// Conservative speed factor.
+// Accounts for: server-side linear interpolation cutting corners on curves (~5%),
+// AND API timestamp uncertainty (±2-4s — poll time, not GPS fix time, adds ~3% avg error).
+// Does NOT account for: GPS hardware noise (negligible after server smoothing).
+export const CONSERVATIVE_SPEED_FACTOR = 0.92;
 
 
 // Spline renderer
