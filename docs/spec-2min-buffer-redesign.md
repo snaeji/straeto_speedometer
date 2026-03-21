@@ -646,3 +646,36 @@ ROUTE_ANIM_MAX_BUFFER              // Same
 4. **Fun loading**: Users enjoy the 2-minute warmup instead of seeing a broken first minute
 5. **Simpler codebase**: Fewer edge cases, fewer warmup guards, one animation system
 6. **Same or better performance**: 60fps maintained, memory usage reasonable
+
+---
+
+## Implementation Status (2026-03-21)
+
+### Completed
+
+All four phases have been implemented:
+
+- **Phase 1**: RawBuffer + LoadingScreen — implemented and wired
+- **Phase 2**: TrajectoryCleaner — implemented with all 7 cleaning steps
+- **Phase 3**: Full pipeline switch — CollectionService refactored, DisplayAnimator replacing old animators
+- **Phase 4**: Tests rewritten (363 passing), old services marked as legacy
+
+### Post-Implementation Fixes
+
+Three critical bugs found and fixed after initial implementation:
+
+1. **Roundabout snap ambiguity**: Added `snapStatelessNear()` for sequential snap continuity. Prevents jumping across opposite sides of roundabouts (which are ~50-100m apart in route distance).
+
+2. **2000 km/h speed spikes**: Outlier rejection changed from AND→OR logic. Added hard speed clamp at 90 km/h at three pipeline levels (raw calculation, Gaussian output, processFrame emission).
+
+3. **Jerky stop/start speed**: Added `isStationary` flag. `speedAtTime()` returns 0 during stopped periods with sharp ramps at transitions. Gaussian smoothing respects stop boundaries.
+
+### Server-Interpolated GPS Tuning
+
+Constants adjusted after discovering the API serves server-interpolated positions (not raw GPS):
+
+- `CONSERVATIVE_SPEED_FACTOR`: 0.95 → 0.92 (accounts for corner-cutting + timing uncertainty)
+- `OUTLIER_JUMP_M`: 500 → 300 (server smoothing means smaller jumps are suspicious)
+- `GAUSSIAN_HALF_WINDOW`: ±3 → ±2 (server already smoothed; less double-smoothing needed)
+- `SNAP_CONTINUITY_MAX_JUMP_M`: 150 → 100 (tighter for roundabouts)
+- Removed 10s intermediate stale points (cached API repeats add no information)
